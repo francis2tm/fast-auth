@@ -1,10 +1,8 @@
-//! Cookie creation helpers.
-
 use crate::config::{AuthConfig, CookieSameSite};
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use time::Duration;
 
-/// Create a cookie for the access token.
+/// Create a cookie for the access token
 pub fn access_token_cookie_create(token: String, config: &AuthConfig) -> Cookie<'static> {
     let max_age = Duration::seconds(config.access_token_expiry.as_secs() as i64);
 
@@ -16,7 +14,7 @@ pub fn access_token_cookie_create(token: String, config: &AuthConfig) -> Cookie<
     )
 }
 
-/// Create a cookie for the refresh token.
+/// Create a cookie for the refresh token
 pub fn refresh_token_cookie_create(token: String, config: &AuthConfig) -> Cookie<'static> {
     let max_age = Duration::seconds(config.refresh_token_expiry.as_secs() as i64);
 
@@ -28,7 +26,7 @@ pub fn refresh_token_cookie_create(token: String, config: &AuthConfig) -> Cookie
     )
 }
 
-/// Create a cookie with standard security settings.
+/// Create a cookie with standard security settings
 fn cookie_create(
     name: String,
     value: String,
@@ -56,17 +54,17 @@ fn cookie_create(
     cookie.build()
 }
 
-/// Create a cookie that clears the access token.
+/// Create a cookie that clears the access token
 pub fn access_token_cookie_clear(config: &AuthConfig) -> Cookie<'static> {
     cookie_clear(config.cookie_access_token_name.clone(), config)
 }
 
-/// Create a cookie that clears the refresh token.
+/// Create a cookie that clears the refresh token
 pub fn refresh_token_cookie_clear(config: &AuthConfig) -> Cookie<'static> {
     cookie_clear(config.cookie_refresh_token_name.clone(), config)
 }
 
-/// Create a cookie with max_age=0 to clear it.
+/// Create a cookie with max_age=0 to clear it
 fn cookie_clear(name: String, config: &AuthConfig) -> Cookie<'static> {
     let same_site = match config.cookie_same_site {
         CookieSameSite::None => SameSite::None,

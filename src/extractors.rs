@@ -1,4 +1,4 @@
-//! Request extractors for authentication.
+//! Axum extractors for authentication.
 
 use crate::{error::AuthError, middleware::UserContext};
 use axum::extract::FromRequestParts;
@@ -10,7 +10,7 @@ use uuid::Uuid;
 /// Extracts authenticated user from the UserContext injected by the base middleware.
 /// This extractor will return an error if the user is not authenticated.
 ///
-/// **Requires**: The `fast_auth::middleware::base` middleware must be applied to the route.
+/// **Requires**: The `auth::middleware::base` middleware must be applied to the route.
 ///
 /// **Does not** fetch user from database - this is a stateless authentication check.
 /// If you need the full user record, query the database in your handler using the user_id.
@@ -18,15 +18,15 @@ use uuid::Uuid;
 /// # Example
 ///
 /// ```rust,ignore
-/// use fast_auth::AuthUserExtractor;
+/// use fast_auth::CurrentUser;
 /// use axum::Json;
 ///
-/// async fn protected_route(auth: AuthUserExtractor) -> Json<String> {
-///     Json(format!("Hello, {}!", auth.email))
+/// async fn protected_route(user: CurrentUser) -> Json<String> {
+///     Json(format!("Hello, {}!", user.email))
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub struct AuthUserExtractor {
+pub struct CurrentUser {
     /// User ID from JWT claims.
     pub user_id: Uuid,
     /// User email from JWT claims.
@@ -35,7 +35,7 @@ pub struct AuthUserExtractor {
     pub role: String,
 }
 
-impl<S> FromRequestParts<S> for AuthUserExtractor
+impl<S> FromRequestParts<S> for CurrentUser
 where
     S: Send + Sync,
 {
@@ -50,7 +50,7 @@ where
 
         // Check if user is authenticated
         match (&context.user_id, &context.email) {
-            (Some(user_id), Some(email)) => Ok(AuthUserExtractor {
+            (Some(user_id), Some(email)) => Ok(CurrentUser {
                 user_id: *user_id,
                 email: email.clone(),
                 role: context.role.clone(),

@@ -1,12 +1,10 @@
-//! Password hashing and validation.
-
 use crate::{config::AuthConfig, error::AuthError};
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
-/// Validate password strength based on configuration.
+/// Validate password strength based on configuration
 pub fn password_validate(password: &str, config: &AuthConfig) -> Result<(), AuthError> {
     if password.len() < config.min_password_length {
         return Err(AuthError::WeakPassword(format!(
@@ -43,7 +41,7 @@ pub fn password_validate(password: &str, config: &AuthConfig) -> Result<(), Auth
     Ok(())
 }
 
-/// Hash a password using Argon2id.
+/// Hash a password using Argon2id
 pub fn password_hash(password: &str) -> Result<String, AuthError> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -55,7 +53,7 @@ pub fn password_hash(password: &str) -> Result<String, AuthError> {
     Ok(hashed.to_string())
 }
 
-/// Verify a password against a hash using constant-time comparison.
+/// Verify a password against a hash using constant-time comparison
 pub fn password_verify(password: &str, hash: &str) -> Result<bool, AuthError> {
     let parsed_hash =
         PasswordHash::new(hash).map_err(|e| AuthError::PasswordHash(e.to_string()))?;
@@ -73,10 +71,7 @@ mod tests {
     use super::*;
 
     fn default_config() -> AuthConfig {
-        AuthConfig {
-            jwt_secret: "a".repeat(32),
-            ..Default::default()
-        }
+        AuthConfig::default()
     }
 
     #[test]

@@ -1,88 +1,90 @@
-//! Sign-up handler.
+//! Handler for user sign-up.
 
 use crate::{
     Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, UserResponse,
-    email::email_normalize,
+    email::email_validate_normalize,
     error::AuthError,
     password::{password_hash, password_validate},
     tokens::token_cookies_generate,
 };
-use axum::{Router, extract::State, response::IntoResponse, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use serde::Deserialize;
-use uuid::Uuid;
 
-/// Sign-up request body.
+pub const SIGN_UP_PATH: &str = "/auth/sign-up";
+
+/// Returns routes for the /auth/sign-up endpoint.
+pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
+    Router::new().route(SIGN_UP_PATH, post(sign_up::<B, H>))
+}
+
+/// Request body for sign-up.
 #[derive(Debug, Deserialize)]
 pub struct SignUpRequest {
-    /// Email address.
+    /// User email address.
     pub email: String,
-    /// Password (plaintext, will be hashed).
+    /// User password (min 8 characters, must contain letter and number).
     pub password: String,
 }
 
-/// Create sign-up routes.
-pub fn sign_up_routes<B, H>() -> Router<Auth<B, H>>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    Router::new().route("/v1/auth/sign-up", post(sign_up::<B, H>))
-}
-
-/// Handle sign-up request.
-async fn sign_up<B, H>(
+/// Sign up a new user.
+///
+/// Creates a new user account with email and password.
+/// Sets access and refresh tokens as httpOnly cookies.
+/// Calls the `on_sign_up` hook after successful user creation.
+pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>>(
     State(auth): State<Auth<B, H>>,
-    axum::Json(request): axum::Json<SignUpRequest>,
-) -> Result<impl IntoResponse, AuthError>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    let email = email_normalize(&request.email)?;
-    password_validate(&request.password, auth.config())?;
+    Json(req): Json<SignUpRequest>,
+) -> Result<Response, AuthError> {
+    let config = auth.config();
 
-    // Check if user exists
-    let existing = auth
-        .backend()
-        .user_find_by_email(&email)
-        .await
-        .map_err(AuthError::backend)?;
+    // Validate and normalize email (RFC 5322 compliant)
+    let email = email_validate_normalize(&req.email)?;
 
-    if existing.is_some() {
-        return Err(AuthError::UserAlreadyExists);
-    }
+    // Validate password strength
+    password_validate(&req.password, config)?;
 
     // Hash password
-    let hashed = password_hash(&request.password)?;
+    let hashed_password = password_hash(&req.password)?;
 
-    // Create user
-    let user_id = Uuid::new_v4();
+    // Create user via backend
     let user = auth
         .backend()
-        .user_create(user_id, email.clone(), hashed)
+        .user_create_atomic(&email, &hashed_password)
         .await
-        .map_err(AuthError::backend)?;
+        .map_err(|e| {
+            // Check if it's a "user already exists" error
+            let msg = e.to_string();
+            if msg.to_lowercase().contains("already exists")
+                || msg.to_lowercase().contains("duplicate")
+            {
+                AuthError::UserAlreadyExists
+            } else {
+                AuthError::Backend(msg)
+            }
+        })?;
 
-    // Call hook
+    // Call the on_sign_up hook
     auth.hooks().on_sign_up(&user).await;
 
-    // Generate tokens
-    let jar = token_cookies_generate::<B, H>(auth.config(), auth.backend(), user.id(), user.email())
-        .await?;
+    // Generate tokens and cookies
+    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
 
-    let response = AuthCookieResponse {
-        user: user_to_response(&user),
-    };
-
-    Ok((jar, axum::Json(response)))
-}
-
-/// Convert AuthUser to UserResponse.
-fn user_to_response<U: AuthUser>(user: &U) -> UserResponse {
-    UserResponse {
+    // Build response with user information
+    let user_response = UserResponse {
         id: user.id().to_string(),
         email: user.email().to_owned(),
         email_confirmed_at: user.email_confirmed_at().map(|dt| dt.to_rfc3339()),
         created_at: user.created_at().to_rfc3339(),
-    }
+    };
+
+    let response_body = AuthCookieResponse {
+        user: user_response,
+    };
+
+    Ok((jar, Json(response_body)).into_response())
 }

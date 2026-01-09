@@ -1,5 +1,3 @@
-//! Authentication configuration.
-
 use std::{env, time::Duration};
 use thiserror::Error;
 
@@ -15,63 +13,63 @@ pub enum AuthConfigError {
     Invalid(String),
 }
 
-/// Cookie SameSite policy.
+/// Cookie SameSite policy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CookieSameSite {
-    /// Cookies are sent in all contexts.
+    /// Cookies are sent in all contexts
     None,
-    /// Cookies are sent in same-site and cross-site top-level navigations.
+    /// Cookies are sent in same-site and cross-site top-level navigations
     Lax,
-    /// Cookies are only sent in same-site contexts.
+    /// Cookies are only sent in same-site contexts
     Strict,
 }
 
-/// Authentication configuration.
+/// Authentication configuration
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// Secret key for signing JWTs.
+    /// Secret key for signing JWTs
     pub jwt_secret: String,
 
-    /// Access token expiry duration (default: 15 minutes).
+    /// Access token expiry duration (default: 15 minutes)
     pub access_token_expiry: Duration,
 
-    /// Refresh token expiry duration (default: 7 days).
+    /// Refresh token expiry duration (default: 7 days)
     pub refresh_token_expiry: Duration,
 
-    /// JWT issuer claim (default: "fast-auth").
+    /// JWT issuer claim (default: "auth")
     pub jwt_issuer: String,
 
-    /// JWT audience claim (default: "authenticated").
+    /// JWT audience claim (default: "authenticated")
     pub jwt_audience: String,
 
-    /// Minimum password length (default: 8).
+    /// Minimum password length (default: 8)
     pub min_password_length: usize,
 
-    /// Maximum password length (default: 128).
+    /// Maximum password length (default: 128)
     pub max_password_length: usize,
 
-    /// Whether passwords must contain at least one letter (default: true).
+    /// Whether passwords must contain at least one letter (default: true)
     pub password_require_letter: bool,
 
-    /// Whether passwords must contain at least one number (default: true).
+    /// Whether passwords must contain at least one number (default: true)
     pub password_require_number: bool,
 
-    /// Cookie name for access token (default: "access_token").
+    /// Cookie name for access token (default: "access_token")
     pub cookie_access_token_name: String,
 
-    /// Cookie name for refresh token (default: "refresh_token").
+    /// Cookie name for refresh token (default: "refresh_token")
     pub cookie_refresh_token_name: String,
 
-    /// Cookie domain (optional, default: None).
+    /// Cookie domain (optional, default: None)
     pub cookie_domain: Option<String>,
 
-    /// Cookie path (default: "/").
+    /// Cookie path (default: "/")
     pub cookie_path: String,
 
-    /// Cookie secure flag - only send over HTTPS (default: true in production, false in debug).
+    /// Cookie secure flag - only send over HTTPS (default: true in production, false in debug)
     pub cookie_secure: bool,
 
-    /// Cookie SameSite policy (default: Lax).
+    /// Cookie SameSite policy (default: Lax)
     pub cookie_same_site: CookieSameSite,
 }
 
@@ -81,7 +79,7 @@ impl Default for AuthConfig {
             jwt_secret: String::new(), // Must be provided by user
             access_token_expiry: Duration::from_secs(15 * 60), // 15 minutes
             refresh_token_expiry: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
-            jwt_issuer: "fast-auth".to_string(),
+            jwt_issuer: "auth".to_string(),
             jwt_audience: "authenticated".to_string(),
             min_password_length: 8,
             max_password_length: 128,
@@ -112,7 +110,7 @@ impl AuthConfig {
         Ok(config)
     }
 
-    /// Validate configuration.
+    /// Validate configuration
     pub fn validate(&self) -> Result<(), AuthConfigError> {
         if self.jwt_secret.is_empty() {
             return Err(AuthConfigError::Invalid(
@@ -158,28 +156,36 @@ impl AuthConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
-    #[test]
-    fn default_config_fails_validation_without_secret() {
-        let config = AuthConfig::default();
-        assert!(config.validate().is_err());
+    fn with_env<F: FnOnce()>(key: &str, value: Option<&str>, f: F) {
+        let original = env::var(key).ok();
+        match value {
+            Some(v) => unsafe { env::set_var(key, v) },
+            None => unsafe { env::remove_var(key) },
+        }
+        f();
+        match original {
+            Some(v) => unsafe { env::set_var(key, v) },
+            None => unsafe { env::remove_var(key) },
+        }
     }
 
     #[test]
-    fn config_with_valid_secret_passes() {
-        let config = AuthConfig {
-            jwt_secret: "a".repeat(32),
-            ..Default::default()
-        };
-        assert!(config.validate().is_ok());
+    #[serial]
+    fn from_env_loads_secret_and_validates() {
+        with_env("AUTH_JWT_SECRET", Some(&"a".repeat(32)), || {
+            let cfg = AuthConfig::from_env().unwrap();
+            assert_eq!(cfg.jwt_secret.len(), 32);
+        });
     }
 
     #[test]
-    fn short_secret_fails_validation() {
-        let config = AuthConfig {
-            jwt_secret: "too_short".to_string(),
-            ..Default::default()
-        };
-        assert!(config.validate().is_err());
+    #[serial]
+    fn from_env_errors_when_missing_secret() {
+        with_env("AUTH_JWT_SECRET", None, || {
+            let err = AuthConfig::from_env().unwrap_err();
+            assert_eq!(err, AuthConfigError::MissingEnv("AUTH_JWT_SECRET"));
+        });
     }
 }
