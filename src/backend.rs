@@ -32,6 +32,7 @@ use uuid::Uuid;
 ///     fn email(&self) -> &str { &self.email }
 ///     fn password_hash(&self) -> &str { &self.password_hash }
 ///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { None }
+///     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { None }
 ///     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
 /// }
 /// ```
@@ -47,6 +48,9 @@ pub trait AuthUser: Send + Sync + Clone {
 
     /// Returns when the email was confirmed, if ever.
     fn email_confirmed_at(&self) -> Option<DateTime<Utc>>;
+
+    /// Returns when the user last signed in, if ever.
+    fn last_sign_in_at(&self) -> Option<DateTime<Utc>>;
 
     /// Returns when the user was created.
     fn created_at(&self) -> DateTime<Utc>;
@@ -127,7 +131,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Atomically revoke all existing refresh tokens for a user and create a new one.
     ///
-    /// This must be implemented atomically (e.g., in a database transaction) to prevent
+    /// This must be implemented atomically (e.g. in a database transaction) to prevent
     /// race conditions where concurrent sign-ins could result in multiple valid sessions.
     fn refresh_token_rotate_atomic(
         &self,

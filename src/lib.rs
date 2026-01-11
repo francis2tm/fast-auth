@@ -32,6 +32,9 @@ pub mod middleware;
 mod password;
 pub mod tokens;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+
 use axum::Router;
 pub use backend::{AuthBackend, AuthUser};
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite};

@@ -10,8 +10,11 @@ keywords = ["auth", "authentication", "axum", "jwt", "web"]
 categories = ["authentication", "web-programming"]
 readme = "README.md"
 
+[features]
+default = []
+testing = ["dep:reqwest"]
+
 [dependencies]
-db = { path = "../db" }
 tracing-config = { path = "../tracing-config" }
 tokio = { workspace = true, features = ["full"] }
 thiserror = { workspace = true }
@@ -30,10 +33,8 @@ hex = "0"
 chrono = { workspace = true }
 time = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
-diesel = { workspace = true }
-diesel-async = { workspace = true }
 email_address = "0"
-
+reqwest = { workspace = true, features = ["json"], optional = true }
 
 [dev-dependencies]
 test-utils = { path = "../test-utils" }
