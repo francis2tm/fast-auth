@@ -183,7 +183,7 @@ pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
     let refresh_token_hash = refresh_token_hash(&user.refresh_token);
 
     // Revoke the token
-    ctx.refresh_token_revoke_by_hash(&refresh_token_hash).await;
+    ctx.refresh_token_revoke(&refresh_token_hash).await;
 
     let response = client
         .get(format!("{}{}", base_url, ME_PATH))

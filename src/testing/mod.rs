@@ -143,11 +143,11 @@ pub trait TestContext: Sized + Send + Sync {
         token_hash: &str,
     ) -> impl Future<Output = Option<RefreshTokenInfo>> + Send;
 
-    /// Manually expire a refresh token (for testing expiration).
+    /// Manually expire a refresh token by its hash (for testing expiration).
     fn refresh_token_expire(&self, token_hash: &str) -> impl Future<Output = ()> + Send;
 
-    /// Manually revoke a refresh token (for testing revocation).
-    fn refresh_token_revoke_by_hash(&self, token_hash: &str) -> impl Future<Output = ()> + Send;
+    /// Manually revoke a refresh token by its hash (for testing revocation).
+    fn refresh_token_revoke(&self, token_hash: &str) -> impl Future<Output = ()> + Send;
 }
 
 /// Test suite for fast-auth.

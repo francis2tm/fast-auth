@@ -30,10 +30,9 @@ mod extractors;
 pub mod handlers;
 pub mod middleware;
 mod password;
-pub mod tokens;
-
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod tokens;
 
 use axum::Router;
 pub use backend::{AuthBackend, AuthUser};
