@@ -32,10 +32,10 @@
 //!
 //! [`AuthBackend`]: crate::AuthBackend
 
-mod protected_route;
-mod sign_in;
-mod sign_out;
-mod sign_up;
+pub mod protected_route;
+pub mod sign_in;
+pub mod sign_out;
+pub mod sign_up;
 
 use axum_extra::extract::cookie::Cookie;
 use chrono::{DateTime, Utc};
@@ -184,4 +184,99 @@ impl<C: TestContext> Suite<C> {
         protected_route::protected_route_rejects_expired_refresh_token::<C>().await;
         protected_route::protected_route_rejects_revoked_refresh_token::<C>().await;
     }
+}
+
+/// Generates individual test functions for the auth suite.
+///
+/// This macro creates a `#[tokio::test]` function for each test case in the suite,
+/// ensuring they run individually and report separate results.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// fast_auth::test_suite!(MyContext);
+/// ```
+#[macro_export]
+macro_rules! test_suite {
+    ($context:ty) => {
+        #[tokio::test]
+        async fn sign_up_creates_user_and_sets_cookies() {
+            $crate::testing::sign_up::sign_up_creates_user_and_sets_cookies::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_rejects_duplicate_email() {
+            $crate::testing::sign_up::sign_up_rejects_duplicate_email::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_rejects_invalid_email() {
+            $crate::testing::sign_up::sign_up_rejects_invalid_email::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_enforces_password_complexity_rules() {
+            $crate::testing::sign_up::sign_up_enforces_password_complexity_rules::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_returns_tokens_for_valid_credentials() {
+            $crate::testing::sign_in::sign_in_returns_tokens_for_valid_credentials::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_rejects_invalid_passwords() {
+            $crate::testing::sign_in::sign_in_rejects_invalid_passwords::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_revokes_existing_refresh_tokens() {
+            $crate::testing::sign_in::sign_in_revokes_existing_refresh_tokens::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_expired_refresh_token_requires_sign_in() {
+            $crate::testing::sign_in::sign_in_expired_refresh_token_requires_sign_in::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_out_revokes_refresh_token_and_clears_cookies() {
+            $crate::testing::sign_out::sign_out_revokes_refresh_token_and_clears_cookies::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_out_requires_refresh_cookie() {
+            $crate::testing::sign_out::sign_out_requires_refresh_cookie::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_out_rejects_unknown_refresh_token_without_leaking_state() {
+            $crate::testing::sign_out::sign_out_rejects_unknown_refresh_token_without_leaking_state::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_out_cannot_be_replayed_with_same_refresh_token() {
+            $crate::testing::sign_out::sign_out_cannot_be_replayed_with_same_refresh_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_accepts_valid_refresh_token() {
+            $crate::testing::protected_route::protected_route_accepts_valid_refresh_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_refreshes_expired_access_token() {
+            $crate::testing::protected_route::protected_route_refreshes_expired_access_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_rejects_expired_refresh_token() {
+            $crate::testing::protected_route::protected_route_rejects_expired_refresh_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_rejects_revoked_refresh_token() {
+            $crate::testing::protected_route::protected_route_rejects_revoked_refresh_token::<$context>().await;
+        }
+    };
 }
