@@ -1,4 +1,4 @@
-use std::{env, time::Duration};
+use std::time::Duration;
 use thiserror::Error;
 
 /// Errors when loading or validating authentication configuration.
@@ -96,20 +96,6 @@ impl Default for AuthConfig {
 }
 
 impl AuthConfig {
-    /// Load configuration from environment variables and validate it.
-    pub fn from_env() -> Result<Self, AuthConfigError> {
-        let jwt_secret = env::var("AUTH_JWT_SECRET")
-            .map_err(|_| AuthConfigError::MissingEnv("AUTH_JWT_SECRET"))?;
-
-        let config = Self {
-            jwt_secret,
-            ..Self::default()
-        };
-
-        config.validate()?;
-        Ok(config)
-    }
-
     /// Validate configuration
     pub fn validate(&self) -> Result<(), AuthConfigError> {
         if self.jwt_secret.is_empty() {
@@ -158,34 +144,25 @@ mod tests {
     use super::*;
     use serial_test::serial;
 
-    fn with_env<F: FnOnce()>(key: &str, value: Option<&str>, f: F) {
-        let original = env::var(key).ok();
-        match value {
-            Some(v) => unsafe { env::set_var(key, v) },
-            None => unsafe { env::remove_var(key) },
-        }
-        f();
-        match original {
-            Some(v) => unsafe { env::set_var(key, v) },
-            None => unsafe { env::remove_var(key) },
-        }
+    #[test]
+    #[serial]
+    fn struct_init_sets_secret_and_defaults() {
+        let secret = "a".repeat(32);
+        let cfg = AuthConfig {
+            jwt_secret: secret.clone(),
+            ..Default::default()
+        };
+        assert_eq!(cfg.jwt_secret, secret);
+        assert_eq!(cfg.access_token_expiry, Duration::from_secs(15 * 60));
     }
 
     #[test]
     #[serial]
-    fn from_env_loads_secret_and_validates() {
-        with_env("AUTH_JWT_SECRET", Some(&"a".repeat(32)), || {
-            let cfg = AuthConfig::from_env().unwrap();
-            assert_eq!(cfg.jwt_secret.len(), 32);
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn from_env_errors_when_missing_secret() {
-        with_env("AUTH_JWT_SECRET", None, || {
-            let err = AuthConfig::from_env().unwrap_err();
-            assert_eq!(err, AuthConfigError::MissingEnv("AUTH_JWT_SECRET"));
-        });
+    fn validate_fails_short_secret() {
+        let cfg = AuthConfig {
+            jwt_secret: "short".to_string(),
+            ..Default::default()
+        };
+        assert!(matches!(cfg.validate(), Err(AuthConfigError::Invalid(_))));
     }
 }

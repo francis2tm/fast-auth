@@ -15,7 +15,8 @@
 //! use axum::{Router, extract::FromRef};
 //!
 //! let backend = /* your AuthBackend implementation */;
-//! let auth = Auth::new(AuthConfig::default(), backend).unwrap();
+//! let secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
 //!
 //! let app = Router::new()
 //!     .merge(auth.routes())
@@ -108,7 +109,8 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 /// use fast_auth::{Auth, AuthConfig, AuthBackend};
 ///
 /// let backend: impl AuthBackend = /* ... */;
-/// let auth = Auth::new(AuthConfig::default(), backend).unwrap();
+/// let secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = ()> {

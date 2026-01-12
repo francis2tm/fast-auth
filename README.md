@@ -63,7 +63,8 @@ use fast_auth::{Auth, AuthConfig};
 use axum::{Router, extract::FromRef, middleware};
 
 let backend = MyBackend::new();
-let auth = Auth::new(AuthConfig::from_env()?, backend)?;
+let secret = std::env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET found");
+let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend)?;
 
 #[derive(Clone)]
 struct AppState {
