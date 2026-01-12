@@ -6,6 +6,7 @@
 //! - Automatic token refresh via middleware
 //! - Lifecycle hooks for sign-up/sign-in events
 //! - Storage-agnostic design via [`AuthBackend`] trait
+//! - Reusable integration test suite (via `testing` feature)
 //!
 //! # Quick Start
 //!

@@ -36,9 +36,9 @@ pub async fn sign_out_revokes_refresh_token_and_clears_cookies<C: TestContext>()
     let payload: SignOutResponse = serde_json::from_slice(&body).unwrap();
     assert!(payload.success);
 
-    let token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
     let revoked = ctx
-        .refresh_token_get(&token_hash)
+        .refresh_token_get(&refresh_token_hash)
         .await
         .expect("token in db");
     assert!(
@@ -95,9 +95,9 @@ pub async fn sign_out_rejects_unknown_refresh_token_without_leaking_state<C: Tes
         "failed revocations must not emit Set-Cookie headers",
     );
 
-    let token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
     let stored = ctx
-        .refresh_token_get(&token_hash)
+        .refresh_token_get(&refresh_token_hash)
         .await
         .expect("token in db");
     assert!(
@@ -123,9 +123,9 @@ pub async fn sign_out_cannot_be_replayed_with_same_refresh_token<C: TestContext>
 
     assert_eq!(first.status(), StatusCode::OK);
 
-    let token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash: String = refresh_token_hash(&user.refresh_token);
     let revoked = ctx
-        .refresh_token_get(&token_hash)
+        .refresh_token_get(&refresh_token_hash)
         .await
         .expect("token in db");
     assert!(revoked.revoked_at.is_some());

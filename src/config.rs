@@ -43,10 +43,10 @@ pub struct AuthConfig {
     pub jwt_audience: String,
 
     /// Minimum password length (default: 8)
-    pub min_password_length: usize,
+    pub password_min_length: usize,
 
     /// Maximum password length (default: 128)
-    pub max_password_length: usize,
+    pub password_max_length: usize,
 
     /// Whether passwords must contain at least one letter (default: true)
     pub password_require_letter: bool,
@@ -79,10 +79,10 @@ impl Default for AuthConfig {
             jwt_secret: String::new(), // Must be provided by user
             access_token_expiry: Duration::from_secs(15 * 60), // 15 minutes
             refresh_token_expiry: Duration::from_secs(7 * 24 * 60 * 60), // 7 days
-            jwt_issuer: "auth".to_string(),
+            jwt_issuer: "fast-auth".to_string(),
             jwt_audience: "authenticated".to_string(),
-            min_password_length: 8,
-            max_password_length: 128,
+            password_min_length: 8,
+            password_max_length: 128,
             password_require_letter: true,
             password_require_number: true,
             cookie_access_token_name: "access_token".to_string(),
@@ -136,13 +136,13 @@ impl AuthConfig {
             ));
         }
 
-        if self.min_password_length == 0 {
+        if self.password_min_length == 0 {
             return Err(AuthConfigError::Invalid(
                 "Minimum password length must be greater than 0".to_string(),
             ));
         }
 
-        if self.max_password_length < self.min_password_length {
+        if self.password_max_length < self.password_min_length {
             return Err(AuthConfigError::Invalid(
                 "Maximum password length must be greater than or equal to minimum password length"
                     .to_string(),

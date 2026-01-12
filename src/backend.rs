@@ -136,7 +136,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     fn refresh_token_rotate_atomic(
         &self,
         user_id: Uuid,
-        token_hash: &str,
+        refresh_token_hash: &str,
         expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
@@ -145,7 +145,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// Returns `true` if a token was revoked, `false` if not found or already revoked.
     fn refresh_token_revoke(
         &self,
-        token_hash: &str,
+        refresh_token_hash: &str,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
     /// Validate a refresh token and return the associated user ID.
@@ -153,6 +153,6 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// Returns `None` if the token is invalid, expired, or revoked.
     fn refresh_token_validate(
         &self,
-        token_hash: &str,
+        refresh_token_hash: &str,
     ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
 }

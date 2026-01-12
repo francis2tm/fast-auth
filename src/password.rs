@@ -6,17 +6,17 @@ use argon2::{
 
 /// Validate password strength based on configuration
 pub fn password_validate(password: &str, config: &AuthConfig) -> Result<(), AuthError> {
-    if password.len() < config.min_password_length {
+    if password.len() < config.password_min_length {
         return Err(AuthError::WeakPassword(format!(
             "Password must be at least {} characters",
-            config.min_password_length
+            config.password_min_length
         )));
     }
 
-    if password.len() > config.max_password_length {
+    if password.len() > config.password_max_length {
         return Err(AuthError::WeakPassword(format!(
             "Password must not exceed {} characters",
-            config.max_password_length
+            config.password_max_length
         )));
     }
 
