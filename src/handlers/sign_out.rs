@@ -1,64 +1,80 @@
-//! Sign-out handler.
+//! Handler for user sign-out.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthRefreshToken,
+    Auth, AuthBackend, AuthHooks,
     cookies::{access_token_cookie_clear, refresh_token_cookie_clear},
     error::AuthError,
     tokens::refresh_token_hash,
 };
-use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use axum_extra::extract::cookie::CookieJar;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-/// Sign-out response body.
-#[derive(Debug, Serialize)]
+pub const SIGN_OUT_PATH: &str = "/auth/sign-out";
+
+/// Returns routes for the /auth/sign-out endpoint.
+pub fn sign_out_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
+    Router::new().route(SIGN_OUT_PATH, post(sign_out::<B, H>))
+}
+
+/// Response for sign-out.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SignOutResponse {
-    /// Success message.
+    /// Sign-out success status.
+    pub success: bool,
+    /// Message instructing client to clear tokens.
     pub message: String,
 }
 
-/// Create sign-out routes.
-pub fn sign_out_routes<B, H>() -> Router<Auth<B, H>>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    Router::new().route("/v1/auth/sign-out", post(sign_out::<B, H>))
-}
-
-/// Handle sign-out request.
-async fn sign_out<B, H>(
+/// Sign out user by revoking refresh token.
+///
+/// Revokes the refresh token from database and clears both access and refresh cookies.
+/// The server automatically sends Set-Cookie headers to clear the cookies from the browser.
+///
+/// **Note**: Due to the stateless nature of JWT tokens, if the access token was copied before
+/// sign-out, it will remain valid until it expires (typically 15 minutes). This is standard
+/// behavior for JWT-based authentication systems.
+pub async fn sign_out<B: AuthBackend, H: AuthHooks<B::User>>(
     State(auth): State<Auth<B, H>>,
     jar: CookieJar,
-) -> Result<impl IntoResponse, AuthError>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
+) -> Result<Response, AuthError> {
     let config = auth.config();
 
-    // If there's a refresh token, revoke it
-    if let Some(refresh_cookie) = jar.get(&config.cookie_refresh_token_name) {
-        let hash = refresh_token_hash(refresh_cookie.value());
+    // Get refresh token from cookie
+    let refresh_token = jar
+        .get(&config.cookie_refresh_token_name)
+        .map(|c| c.value().to_string())
+        .ok_or(AuthError::RefreshTokenInvalid)?;
 
-        // Find the token to get the user_id
-        if let Ok(Some(token)) = auth.backend().refresh_token_find_valid(&hash).await {
-            // Revoke all tokens for this user
-            let _ = auth
-                .backend()
-                .refresh_tokens_revoke_all(token.user_id())
-                .await;
-        }
+    let refresh_token_hash = refresh_token_hash(&refresh_token);
+
+    // Revoke refresh token via backend
+    let revoked = auth
+        .backend()
+        .refresh_token_revoke(&refresh_token_hash)
+        .await
+        .map_err(|e| AuthError::Backend(e.to_string()))?;
+
+    if !revoked {
+        // Token not found or already revoked
+        return Err(AuthError::RefreshTokenInvalid);
     }
 
-    // Clear cookies
-    let jar = jar
-        .add(access_token_cookie_clear(config))
-        .add(refresh_token_cookie_clear(config));
+    // Clear cookies by setting max-age=0
+    let access_clear_cookie = access_token_cookie_clear(config);
+    let refresh_clear_cookie = refresh_token_cookie_clear(config);
 
-    let response = SignOutResponse {
-        message: "Signed out successfully".to_string(),
+    let jar = jar.add(access_clear_cookie).add(refresh_clear_cookie);
+
+    let response_body = SignOutResponse {
+        success: true,
+        message: "Signed out successfully. Cookies have been cleared.".to_string(),
     };
 
-    Ok((jar, Json(response)))
+    Ok((jar, Json(response_body)).into_response())
 }

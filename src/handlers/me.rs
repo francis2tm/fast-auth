@@ -1,47 +1,42 @@
-//! Me handler (get current user).
+//! Handler for getting current user information.
 
-use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, UserResponse,
-    error::AuthError,
-    extractors::AuthUserExtractor,
-};
-use axum::{Router, Json, extract::State, routing::get};
+use crate::{Auth, AuthBackend, AuthHooks, AuthUser, CurrentUser, UserResponse, error::AuthError};
+use axum::{Json, Router, extract::State, routing::get};
 
-/// Create me routes.
-pub fn me_routes<B, H>() -> Router<Auth<B, H>>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    Router::new().route("/v1/auth/me", get(me_get::<B, H>))
+pub const ME_PATH: &str = "/auth/me";
+
+/// Returns routes for the /auth/me endpoint.
+pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
+    Router::new().route(ME_PATH, get(me_get::<B, H>))
 }
 
-/// Handle me request.
-async fn me_get<B, H>(
+/// Get current authenticated user.
+///
+/// Returns the current user's information from the JWT token.
+/// Queries the database to get fresh user data including email_confirmed_at and created_at.
+///
+/// # Requires
+/// - Valid JWT access token (httpOnly cookie)
+/// - `auth::middleware::base` middleware applied to route
+pub async fn me_get<B: AuthBackend, H: AuthHooks<B::User>>(
+    current_user: CurrentUser,
     State(auth): State<Auth<B, H>>,
-    auth_user: AuthUserExtractor,
-) -> Result<Json<UserResponse>, AuthError>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    // Fetch user from database
+) -> Result<Json<UserResponse>, AuthError> {
+    // Query user from database to get fresh data
     let user = auth
         .backend()
-        .user_find_by_id(auth_user.user_id)
+        .user_get_by_id(current_user.user_id)
         .await
-        .map_err(AuthError::backend)?
+        .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::UserNotFound)?;
 
-    Ok(Json(user_to_response(&user)))
-}
-
-/// Convert AuthUser to UserResponse.
-fn user_to_response<U: AuthUser>(user: &U) -> UserResponse {
-    UserResponse {
+    // Build response
+    let user_response = UserResponse {
         id: user.id().to_string(),
         email: user.email().to_owned(),
         email_confirmed_at: user.email_confirmed_at().map(|dt| dt.to_rfc3339()),
         created_at: user.created_at().to_rfc3339(),
-    }
+    };
+
+    Ok(Json(user_response))
 }

@@ -1,83 +1,84 @@
-//! Sign-in handler.
+//! Handler for user sign-in.
 
 use crate::{
     Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, UserResponse,
-    email::email_normalize,
-    error::AuthError,
-    password::password_verify,
+    email::email_validate_normalize, error::AuthError, password::password_verify,
     tokens::token_cookies_generate,
 };
-use axum::{Router, extract::State, response::IntoResponse, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use serde::Deserialize;
 
-/// Sign-in request body.
+pub const SIGN_IN_PATH: &str = "/auth/sign-in";
+
+/// Returns routes for the /auth/sign-in endpoint.
+pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
+    Router::new().route(SIGN_IN_PATH, post(sign_in::<B, H>))
+}
+
+/// Request body for sign-in.
 #[derive(Debug, Deserialize)]
 pub struct SignInRequest {
-    /// Email address.
+    /// User email address.
     pub email: String,
-    /// Password (plaintext).
+    /// User password.
     pub password: String,
 }
 
-/// Create sign-in routes.
-pub fn sign_in_routes<B, H>() -> Router<Auth<B, H>>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    Router::new().route("/v1/auth/sign-in", post(sign_in::<B, H>))
-}
-
-/// Handle sign-in request.
-async fn sign_in<B, H>(
+/// Sign in an existing user.
+///
+/// Authenticates user with email and password.
+/// Sets access and refresh tokens as httpOnly cookies.
+/// Calls the `on_sign_in` hook after successful authentication.
+pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>>(
     State(auth): State<Auth<B, H>>,
-    axum::Json(request): axum::Json<SignInRequest>,
-) -> Result<impl IntoResponse, AuthError>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    let email = email_normalize(&request.email)?;
+    Json(req): Json<SignInRequest>,
+) -> Result<Response, AuthError> {
+    // Normalize email for consistent lookup
+    let email = email_validate_normalize(&req.email)?;
 
-    // Find user
+    // Find user by normalized email
     let user = auth
         .backend()
         .user_find_by_email(&email)
         .await
-        .map_err(AuthError::backend)?
+        .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::InvalidCredentials)?;
 
-    // Verify password
-    if !password_verify(&request.password, user.password_hash())? {
+    // Verify password (constant-time comparison)
+    let password_valid = password_verify(&req.password, user.password_hash())?;
+
+    if !password_valid {
         return Err(AuthError::InvalidCredentials);
     }
 
-    // Update last sign-in timestamp
+    // Update last_sign_in_at
     auth.backend()
-        .user_update_last_sign_in(user.id())
+        .user_last_sign_in_update(user.id())
         .await
-        .map_err(AuthError::backend)?;
+        .map_err(|e| AuthError::Backend(e.to_string()))?;
 
-    // Call hook
+    // Call the on_sign_in hook
     auth.hooks().on_sign_in(&user).await;
 
-    // Generate tokens
-    let jar = token_cookies_generate::<B, H>(auth.config(), auth.backend(), user.id(), user.email())
-        .await?;
+    // Generate tokens and cookies
+    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
 
-    let response = AuthCookieResponse {
-        user: user_to_response(&user),
-    };
-
-    Ok((jar, axum::Json(response)))
-}
-
-/// Convert AuthUser to UserResponse.
-fn user_to_response<U: AuthUser>(user: &U) -> UserResponse {
-    UserResponse {
+    // Build response with user information
+    let user_response = UserResponse {
         id: user.id().to_string(),
         email: user.email().to_owned(),
         email_confirmed_at: user.email_confirmed_at().map(|dt| dt.to_rfc3339()),
         created_at: user.created_at().to_rfc3339(),
-    }
+    };
+
+    let response_body = AuthCookieResponse {
+        user: user_response,
+    };
+
+    Ok((jar, Json(response_body)).into_response())
 }

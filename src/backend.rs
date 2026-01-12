@@ -1,162 +1,158 @@
-//! Backend trait for database operations.
+//! Backend trait abstraction for storage-agnostic authentication.
 //!
-//! This module defines the traits that abstract database operations,
-//! allowing `fast-auth` to work with any database backend.
+//! This module defines the core traits that allow `fast-auth` to work with
+//! any database or storage backend.
 
 use chrono::{DateTime, Utc};
 use std::future::Future;
 use uuid::Uuid;
 
-/// User data required by the auth system.
+/// Minimal user interface required by fast-auth.
 ///
-/// Implement this trait for your user model to use with `fast-auth`.
+/// Implement this trait for your user type to use with [`AuthBackend`].
+/// This decouples the auth library from any specific user schema.
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use fast_auth::AuthUser;
-/// use uuid::Uuid;
 /// use chrono::{DateTime, Utc};
+/// use uuid::Uuid;
 ///
 /// #[derive(Clone)]
 /// struct MyUser {
 ///     id: Uuid,
 ///     email: String,
 ///     password_hash: String,
-///     email_confirmed_at: Option<DateTime<Utc>>,
-///     created_at: DateTime<Utc>,
+///     // ... your custom fields
 /// }
 ///
 /// impl AuthUser for MyUser {
 ///     fn id(&self) -> Uuid { self.id }
 ///     fn email(&self) -> &str { &self.email }
 ///     fn password_hash(&self) -> &str { &self.password_hash }
-///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { self.email_confirmed_at }
-///     fn created_at(&self) -> DateTime<Utc> { self.created_at }
+///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { None }
+///     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { None }
+///     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
 /// }
 /// ```
-pub trait AuthUser: Clone + Send + Sync + 'static {
+pub trait AuthUser: Send + Sync + Clone {
     /// Returns the user's unique identifier.
     fn id(&self) -> Uuid;
 
     /// Returns the user's email address.
     fn email(&self) -> &str;
 
-    /// Returns the user's password hash (for verification).
+    /// Returns the user's hashed password.
     fn password_hash(&self) -> &str;
 
-    /// Returns when the user's email was confirmed, if ever.
+    /// Returns when the email was confirmed, if ever.
     fn email_confirmed_at(&self) -> Option<DateTime<Utc>>;
+
+    /// Returns when the user last signed in, if ever.
+    fn last_sign_in_at(&self) -> Option<DateTime<Utc>>;
 
     /// Returns when the user was created.
     fn created_at(&self) -> DateTime<Utc>;
 }
 
-/// Refresh token data required by the auth system.
+/// Backend storage trait for authentication operations.
 ///
-/// Implement this trait for your refresh token model.
-pub trait AuthRefreshToken: Send + Sync {
-    /// Returns the user ID this token belongs to.
-    fn user_id(&self) -> Uuid;
-
-    /// Returns when this token expires.
-    fn expires_at(&self) -> DateTime<Utc>;
-
-    /// Returns when this token was revoked, if ever.
-    fn revoked_at(&self) -> Option<DateTime<Utc>>;
-}
-
-/// Backend trait for auth database operations.
+/// Implement this trait to use any database or storage system with fast-auth.
+/// All operations should be atomic where applicable (e.g., user creation with
+/// duplicate check should use transactions).
 ///
-/// Implement this trait to provide database operations for the auth system.
-/// All operations should use a service role (bypassing RLS) internally.
+/// # Type Parameters
+///
+/// * `User` - Your user type implementing [`AuthUser`]
+/// * `Error` - Your error type for storage operations
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use fast_auth::{AuthBackend, AuthUser, AuthRefreshToken};
+/// use fast_auth::{AuthBackend, AuthUser};
+/// use chrono::{DateTime, Utc};
+/// use uuid::Uuid;
 ///
 /// #[derive(Clone)]
-/// struct MyDbPool { /* ... */ }
+/// struct MyBackend { /* your pool/connection */ }
 ///
-/// impl AuthBackend for MyDbPool {
+/// impl AuthBackend for MyBackend {
 ///     type User = MyUser;
-///     type RefreshToken = MyRefreshToken;
 ///     type Error = MyError;
 ///
-///     async fn user_find_by_email(&self, email: &str) -> Result<Option<Self::User>, Self::Error> {
-///         // Query your database...
+///     async fn user_find_by_email(&self, email: &str)
+///         -> Result<Option<Self::User>, Self::Error> {
+///         // Query your database
 ///         Ok(None)
 ///     }
-///
 ///     // ... implement other methods
 /// }
 /// ```
 pub trait AuthBackend: Clone + Send + Sync + 'static {
-    /// The user type returned by this backend.
+    /// The user type stored in this backend.
     type User: AuthUser;
 
-    /// The refresh token type returned by this backend.
-    type RefreshToken: AuthRefreshToken;
-
-    /// The error type for database operations.
+    /// Error type for storage operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Find a user by their email address.
+    /// Find a user by email address.
     ///
-    /// Returns `Ok(None)` if no user with that email exists.
+    /// Returns `None` if no user exists with the given email.
     fn user_find_by_email(
         &self,
         email: &str,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Create a new user with the given details.
+    /// Find a user by their unique ID.
     ///
-    /// Should check for existing users atomically to prevent race conditions.
-    /// Returns the created user on success.
-    fn user_create(
+    /// Returns `None` if no user exists with the given ID.
+    fn user_get_by_id(
         &self,
         id: Uuid,
-        email: String,
-        password_hash: String,
-    ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
-
-    /// Update the user's last sign-in timestamp.
-    fn user_update_last_sign_in(
-        &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Find a user by their ID.
-    ///
-    /// Returns `Ok(None)` if no user with that ID exists.
-    fn user_find_by_id(
-        &self,
-        user_id: Uuid,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Store a new refresh token.
+    /// Atomically create a new user with the given email and password hash.
     ///
-    /// This should also revoke all existing refresh tokens for the user
-    /// to enforce single-session semantics.
-    fn refresh_token_create(
+    /// This must check for existing users and create the new user within a single
+    /// transaction to prevent race conditions. Returns `Err` if a user with this
+    /// email already exists.
+    fn user_create_atomic(
         &self,
-        hash: String,
+        email: &str,
+        password_hash: &str,
+    ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
+
+    /// Update the last sign-in timestamp for a user.
+    fn user_last_sign_in_update(
+        &self,
+        id: Uuid,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// Atomically revoke all existing refresh tokens for a user and create a new one.
+    ///
+    /// This must be implemented atomically (e.g. in a database transaction) to prevent
+    /// race conditions where concurrent sign-ins could result in multiple valid sessions.
+    fn refresh_token_rotate_atomic(
+        &self,
         user_id: Uuid,
+        refresh_token_hash: &str,
         expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Find a valid (non-revoked, non-expired) refresh token by its hash.
+    /// Revoke a specific refresh token by its hash.
     ///
-    /// Returns `Ok(None)` if no valid token with that hash exists.
-    fn refresh_token_find_valid(
+    /// Returns `true` if a token was revoked, `false` if not found or already revoked.
+    fn refresh_token_revoke(
         &self,
-        hash: &str,
-    ) -> impl Future<Output = Result<Option<Self::RefreshToken>, Self::Error>> + Send;
+        refresh_token_hash: &str,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    /// Revoke all refresh tokens for a user.
-    fn refresh_tokens_revoke_all(
+    /// Validate a refresh token and return the associated user ID.
+    ///
+    /// Returns `None` if the token is invalid, expired, or revoked.
+    fn refresh_token_validate(
         &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        refresh_token_hash: &str,
+    ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
 }

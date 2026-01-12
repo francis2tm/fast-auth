@@ -4,12 +4,13 @@ A simple, extensible authentication library for Axum with JWT and refresh tokens
 
 ## Features
 
+- **Backend Agnostic** for any database and ORM
 - **JWT access tokens** with configurable expiry
 - **Refresh tokens** with automatic rotation and revocation
 - **HttpOnly cookies** for secure token storage
-- **Extensible backend trait** for any database
 - **Lifecycle hooks** for sign-up/sign-in events
 - **Axum middleware** for transparent token validation and refresh
+- **Integration test suite** for verifying backend implementation
 
 ## Quick Start
 
@@ -62,7 +63,8 @@ use fast_auth::{Auth, AuthConfig};
 use axum::{Router, extract::FromRef, middleware};
 
 let backend = MyBackend::new();
-let auth = Auth::new(AuthConfig::from_env()?, backend)?;
+let secret = std::env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET found");
+let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend)?;
 
 #[derive(Clone)]
 struct AppState {
@@ -152,6 +154,44 @@ use axum::Json;
 async fn protected_route(auth: AuthUserExtractor) -> Json<String> {
     Json(format!("Hello, {}!", auth.email))
 }
+```
+
+## Testing
+
+`fast-auth` includes a comprehensive integration test suite that you can run against your own backend implementation.
+
+1. Enable the `testing` feature in `Cargo.toml`:
+
+```toml
+[dev-dependencies]
+fast-auth = { version = "0.1", features = ["testing"] }
+```
+
+2. Implement `fast_auth::testing::TestContext` for your test app:
+
+```rust
+use fast_auth::testing::TestContext;
+
+struct TestApp { /* ... */ }
+
+impl TestContext for TestApp {
+    type User = MyUser;
+
+    // Helper to spawn a fresh test instance
+    async fn spawn() -> (String, reqwest::Client, Self) {
+        // ... return base_url, http_client, and app state
+    }
+}
+```
+
+3. Use the `test_suite!` macro to generate tests:
+
+```rust
+// tests/auth.rs
+use fast_auth::test_suite;
+
+// Generates individual #[tokio::test] functions
+test_suite!(TestApp);
 ```
 
 ## License

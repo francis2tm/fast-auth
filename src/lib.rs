@@ -1,93 +1,26 @@
-//! # fast-auth
+//! Fast, extensible authentication library for Axum with JWT and refresh tokens.
 //!
-//! A simple, extensible authentication library for Axum with JWT and refresh tokens.
+//! This crate provides email/password authentication with:
+//! - JWT access tokens (short-lived)
+//! - Refresh tokens (long-lived, stored in database)
+//! - Automatic token refresh via middleware
+//! - Lifecycle hooks for sign-up/sign-in events
+//! - Storage-agnostic design via [`AuthBackend`] trait
+//! - Reusable integration test suite (via `testing` feature)
 //!
-//! ## Features
-//!
-//! - **JWT access tokens** with configurable expiry
-//! - **Refresh tokens** with automatic rotation and revocation
-//! - **HttpOnly cookies** for secure token storage
-//! - **Extensible backend trait** for any database
-//! - **Lifecycle hooks** for sign-up/sign-in events
-//! - **Axum middleware** for transparent token validation and refresh
-//!
-//! ## Quick Start
-//!
-//! First, implement the [`AuthBackend`] trait for your database:
-//!
-//! ```rust,ignore
-//! use fast_auth::{AuthBackend, AuthUser, AuthRefreshToken};
-//!
-//! #[derive(Clone)]
-//! struct MyBackend { /* your db pool */ }
-//!
-//! impl AuthBackend for MyBackend {
-//!     type User = MyUser;
-//!     type RefreshToken = MyRefreshToken;
-//!     type Error = MyError;
-//!
-//!     // ... implement methods
-//! }
-//! ```
-//!
-//! Then create an `Auth` instance and add routes:
+//! # Quick Start
 //!
 //! ```rust,ignore
 //! use fast_auth::{Auth, AuthConfig};
-//! use axum::{Router, extract::FromRef, middleware};
+//! use axum::{Router, extract::FromRef};
 //!
-//! let backend = MyBackend::new();
-//! let auth = Auth::new(AuthConfig::from_env()?, backend)?;
-//!
-//! #[derive(Clone)]
-//! struct AppState {
-//!     auth: Auth<MyBackend>,
-//! }
-//!
-//! impl FromRef<AppState> for Auth<MyBackend> {
-//!     fn from_ref(s: &AppState) -> Self { s.auth.clone() }
-//! }
-//!
-//! let state = AppState { auth: auth.clone() };
+//! let backend = /* your AuthBackend implementation */;
+//! let secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
 //!
 //! let app = Router::new()
-//!     .merge(auth.routes::<AppState>())
-//!     .layer(middleware::from_fn_with_state(
-//!         auth.clone(),
-//!         fast_auth::middleware::base::<MyBackend, ()>,
-//!     ))
-//!     .with_state(state);
-//! ```
-//!
-//! ## Endpoints
-//!
-//! - `POST /v1/auth/sign-up` - Create new user
-//! - `POST /v1/auth/sign-in` - Authenticate user
-//! - `POST /v1/auth/sign-out` - Sign out (revokes tokens)
-//! - `GET /v1/auth/me` - Get current user (requires auth)
-//!
-//! ## Hooks
-//!
-//! Use hooks to run custom logic after authentication events:
-//!
-//! ```rust,ignore
-//! use fast_auth::{Auth, AuthConfig, AuthHooks, AuthUser};
-//!
-//! #[derive(Clone)]
-//! struct MyHooks;
-//!
-//! impl<U: AuthUser> AuthHooks<U> for MyHooks {
-//!     fn on_sign_up(&self, user: &U) -> impl std::future::Future<Output = ()> + Send {
-//!         let user_id = user.id();
-//!         async move {
-//!             // Send welcome email, create Stripe customer, etc.
-//!             println!("New user signed up: {user_id}");
-//!         }
-//!     }
-//! }
-//!
-//! let auth = Auth::new(config, backend)?
-//!     .with_hooks(MyHooks);
+//!     .merge(auth.routes())
+//!     .with_state(auth);
 //! ```
 
 mod backend;
@@ -99,47 +32,45 @@ mod extractors;
 pub mod handlers;
 pub mod middleware;
 mod password;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod tokens;
 
 use axum::Router;
+pub use backend::{AuthBackend, AuthUser};
+pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
+pub use error::AuthError;
+pub use extractors::CurrentUser;
+pub use handlers::sign_in::SignInRequest;
+pub use handlers::sign_out::SignOutResponse;
+pub use handlers::sign_up::SignUpRequest;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
 
-pub use backend::{AuthBackend, AuthRefreshToken, AuthUser};
-pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
-pub use error::AuthError;
-pub use extractors::AuthUserExtractor;
-pub use handlers::{SignInRequest, SignOutResponse, SignUpRequest};
-
 /// User data returned in auth responses.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserResponse {
-    /// User ID.
     pub id: String,
-    /// User email.
     pub email: String,
-    /// When email was confirmed (ISO 8601), if ever.
     pub email_confirmed_at: Option<String>,
-    /// When user was created (ISO 8601).
     pub created_at: String,
 }
 
 /// Auth response body. Tokens are set as httpOnly cookies.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthCookieResponse {
-    /// User data.
     pub user: UserResponse,
 }
 
 /// Hooks for auth lifecycle events (sign-up, sign-in).
 ///
-/// Implement this trait to run custom logic after authentication events,
-/// such as sending welcome emails or creating related resources.
+/// Implement this trait to receive callbacks when users sign up or sign in.
+/// The user parameter uses your backend's user type via [`AuthBackend::User`].
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use fast_auth::{AuthHooks, AuthUser};
 ///
 /// #[derive(Clone)]
@@ -168,21 +99,18 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 
 /// Email/password auth with JWT tokens. Cheap to clone.
 ///
-/// # Type Parameters
-///
-/// - `B`: The backend implementing [`AuthBackend`]
-/// - `H`: Optional hooks implementing [`AuthHooks`] (defaults to `()`)
+/// Generic over:
+/// - `B`: The storage backend implementing [`AuthBackend`]
+/// - `H`: Optional lifecycle hooks implementing [`AuthHooks`]
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use fast_auth::{Auth, AuthConfig};
+/// use fast_auth::{Auth, AuthConfig, AuthBackend};
 ///
-/// let auth = Auth::new(AuthConfig::from_env()?, backend)?;
-///
-/// // With hooks
-/// let auth = Auth::new(config, backend)?
-///     .with_hooks(MyHooks);
+/// let backend: impl AuthBackend = /* ... */;
+/// let secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = ()> {
@@ -214,12 +142,6 @@ impl<B: AuthBackend, H: AuthHooks<B::User>> Auth<B, H> {
     }
 
     /// Returns a router with all auth endpoints.
-    ///
-    /// Endpoints:
-    /// - `POST /v1/auth/sign-up`
-    /// - `POST /v1/auth/sign-in`
-    /// - `POST /v1/auth/sign-out`
-    /// - `GET /v1/auth/me`
     pub fn routes<S>(&self) -> Router<S>
     where
         S: Clone + Send + Sync + 'static,
@@ -238,11 +160,12 @@ impl<B: AuthBackend, H: AuthHooks<B::User>> Auth<B, H> {
         &self.config
     }
 
-    /// Returns a reference to the backend.
+    /// Returns a reference to the storage backend.
     pub fn backend(&self) -> &B {
         &self.backend
     }
 
+    /// Returns a reference to the lifecycle hooks.
     pub(crate) fn hooks(&self) -> &H {
         &self.hooks
     }

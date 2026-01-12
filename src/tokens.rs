@@ -1,7 +1,7 @@
-//! JWT token generation and validation.
+//! Token generation and validation utilities.
 
 use crate::{
-    AuthBackend, AuthHooks,
+    Auth, AuthBackend, AuthHooks,
     config::AuthConfig,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
     error::AuthError,
@@ -9,6 +9,7 @@ use crate::{
 use axum_extra::extract::cookie::CookieJar;
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -90,7 +91,8 @@ pub fn access_token_validate(
 
 /// Generate a random refresh token.
 pub fn refresh_token_generate() -> String {
-    let token: [u8; 32] = rand::random();
+    let mut rng = rand::rng();
+    let token: [u8; 32] = rng.random();
 
     // Encode as hex string (64 characters)
     hex::encode(token)
@@ -111,34 +113,29 @@ pub fn refresh_token_calculate_expiry(config: &AuthConfig) -> Result<DateTime<Ut
     Ok(Utc::now() + refresh)
 }
 
-/// Persist a refresh token hash and emit the matching cookie pair.
+/// Persist a refresh token and emit the matching cookie pair.
 ///
 /// To enforce single-session semantics, this revokes every previously active
-/// refresh token for the same user before inserting the new one.
-pub async fn token_cookies_generate<B, H>(
-    config: &AuthConfig,
-    backend: &B,
+/// refresh token for the user and creates a new one.
+pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks<B::User>>(
+    auth: &Auth<B, H>,
     user_id: Uuid,
     email: &str,
-) -> Result<CookieJar, AuthError>
-where
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-{
-    let access_token = access_token_generate(user_id, email.to_owned(), config)?;
+) -> Result<CookieJar, AuthError> {
+    let access_token = access_token_generate(user_id, email.to_owned(), auth.config())?;
     let refresh_token = refresh_token_generate();
     let refresh_token_hash = refresh_token_hash(&refresh_token);
-    let refresh_token_expiry = refresh_token_calculate_expiry(config)?;
+    let refresh_token_expiry = refresh_token_calculate_expiry(auth.config())?;
 
-    // Store the refresh token (this also revokes old tokens)
-    backend
-        .refresh_token_create(refresh_token_hash, user_id, refresh_token_expiry)
+    // Atomically revoke old tokens and create new one
+    auth.backend()
+        .refresh_token_rotate_atomic(user_id, &refresh_token_hash, refresh_token_expiry)
         .await
-        .map_err(AuthError::backend)?;
+        .map_err(|e| AuthError::Backend(e.to_string()))?;
 
     let jar = CookieJar::new()
-        .add(access_token_cookie_create(access_token, config))
-        .add(refresh_token_cookie_create(refresh_token, config));
+        .add(access_token_cookie_create(access_token, auth.config()))
+        .add(refresh_token_cookie_create(refresh_token, auth.config()));
 
     Ok(jar)
 }
