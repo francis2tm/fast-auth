@@ -71,6 +71,20 @@ pub struct AuthConfig {
 
     /// Cookie SameSite policy (default: Lax)
     pub cookie_same_site: CookieSameSite,
+
+    // --- Email Verification Settings ---
+    /// Email verification token expiry (default: 1 hour)
+    pub email_verification_token_expiry: Duration,
+
+    /// Password reset token expiry (default: 1 hour)
+    pub password_reset_token_expiry: Duration,
+
+    /// Base URL for email links (e.g., "https://app.example.com")
+    /// Used to construct verify/reset links sent in emails.
+    pub email_link_base_url: Option<String>,
+
+    /// Whether to require email confirmation before login (default: false)
+    pub require_email_confirmation: bool,
 }
 
 impl Default for AuthConfig {
@@ -91,6 +105,10 @@ impl Default for AuthConfig {
             cookie_path: "/".to_string(),
             cookie_secure: !cfg!(debug_assertions), // true in release, false in debug
             cookie_same_site: CookieSameSite::Lax,
+            email_verification_token_expiry: Duration::from_secs(60 * 60), // 1 hour
+            password_reset_token_expiry: Duration::from_secs(60 * 60),     // 1 hour
+            email_link_base_url: None,
+            require_email_confirmation: false,
         }
     }
 }

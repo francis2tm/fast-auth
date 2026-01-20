@@ -1,7 +1,7 @@
 //! Handler for user sign-in.
 
 use crate::{
-    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, UserResponse,
+    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, EmailSender, UserResponse,
     email::email_validate_normalize, error::AuthError, password::password_verify,
     tokens::token_cookies_generate,
 };
@@ -16,8 +16,9 @@ use serde::Deserialize;
 pub const SIGN_IN_PATH: &str = "/auth/sign-in";
 
 /// Returns routes for the /auth/sign-in endpoint.
-pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
-    Router::new().route(SIGN_IN_PATH, post(sign_in::<B, H>))
+pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
+-> Router<Auth<B, H, E>> {
+    Router::new().route(SIGN_IN_PATH, post(sign_in::<B, H, E>))
 }
 
 /// Request body for sign-in.
@@ -34,8 +35,8 @@ pub struct SignInRequest {
 /// Authenticates user with email and password.
 /// Sets access and refresh tokens as httpOnly cookies.
 /// Calls the `on_sign_in` hook after successful authentication.
-pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>>(
-    State(auth): State<Auth<B, H>>,
+pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignInRequest>,
 ) -> Result<Response, AuthError> {
     // Normalize email for consistent lookup

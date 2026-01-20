@@ -1,7 +1,7 @@
 //! Token generation and validation utilities.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks,
+    Auth, AuthBackend, AuthHooks, EmailSender,
     config::AuthConfig,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
     error::AuthError,
@@ -89,43 +89,51 @@ pub fn access_token_validate(
     Ok(token_data.claims)
 }
 
-/// Generate a random refresh token.
-pub fn refresh_token_generate() -> String {
+// =============================================================================
+// Token Utilities
+// =============================================================================
+
+/// Hash a string using SHA-256. Used for storing tokens securely.
+pub fn token_hash_sha256(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Generate a cryptographically random 32-byte token as hex string.
+pub fn token_generate() -> String {
     let mut rng = rand::rng();
     let token: [u8; 32] = rng.random();
-
-    // Encode as hex string (64 characters)
     hex::encode(token)
 }
 
-/// Hash a refresh token for storage (SHA-256).
-pub fn refresh_token_hash(token: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(token.as_bytes());
-    let result = hasher.finalize();
-    hex::encode(result)
+/// Calculate expiration time from a duration.
+pub fn token_expiry_calculate(duration: std::time::Duration) -> DateTime<Utc> {
+    let chrono_duration = Duration::from_std(duration).unwrap_or_else(|_| Duration::hours(1));
+    Utc::now() + chrono_duration
 }
 
-/// Calculate expiration time for refresh token.
-pub fn refresh_token_calculate_expiry(config: &AuthConfig) -> Result<DateTime<Utc>, AuthError> {
-    let refresh = Duration::from_std(config.refresh_token_expiry)
-        .map_err(|_| AuthError::Internal("refresh token expiry overflow".to_string()))?;
-    Ok(Utc::now() + refresh)
+/// Generate a random token and its hash.
+///
+/// Returns `(token, hash)` where token is shared and hash is stored.
+pub fn token_with_hash_generate() -> (String, String) {
+    let token = token_generate();
+    let hash = token_hash_sha256(&token);
+    (token, hash)
 }
 
 /// Persist a refresh token and emit the matching cookie pair.
 ///
 /// To enforce single-session semantics, this revokes every previously active
 /// refresh token for the user and creates a new one.
-pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks<B::User>>(
-    auth: &Auth<B, H>,
+pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    auth: &Auth<B, H, E>,
     user_id: Uuid,
     email: &str,
 ) -> Result<CookieJar, AuthError> {
     let access_token = access_token_generate(user_id, email.to_owned(), auth.config())?;
-    let refresh_token = refresh_token_generate();
-    let refresh_token_hash = refresh_token_hash(&refresh_token);
-    let refresh_token_expiry = refresh_token_calculate_expiry(auth.config())?;
+    let (refresh_token, refresh_token_hash) = token_with_hash_generate();
+    let refresh_token_expiry = token_expiry_calculate(auth.config().refresh_token_expiry);
 
     // Atomically revoke old tokens and create new one
     auth.backend()
@@ -191,9 +199,9 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_refresh_token() {
-        let token1 = refresh_token_generate();
-        let token2 = refresh_token_generate();
+    fn test_generate_random_token() {
+        let token1 = token_generate();
+        let token2 = token_generate();
 
         // Tokens should be different
         assert_ne!(token1, token2);
@@ -204,10 +212,10 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_refresh_token() {
-        let token = refresh_token_generate();
-        let hash1 = refresh_token_hash(&token);
-        let hash2 = refresh_token_hash(&token);
+    fn test_sha256_hash() {
+        let token = token_generate();
+        let hash1 = token_hash_sha256(&token);
+        let hash2 = token_hash_sha256(&token);
 
         // Same token should produce same hash
         assert_eq!(hash1, hash2);
@@ -216,8 +224,8 @@ mod tests {
         assert_eq!(hash1.len(), 64);
 
         // Different token should produce different hash
-        let different_token = refresh_token_generate();
-        let different_hash = refresh_token_hash(&different_token);
+        let different_token = token_generate();
+        let different_hash = token_hash_sha256(&different_token);
         assert_ne!(hash1, different_hash);
     }
 }

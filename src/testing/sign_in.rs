@@ -7,7 +7,7 @@ use serde_json::json;
 use crate::AuthCookieResponse;
 use crate::AuthUser;
 use crate::handlers::{ME_PATH, SIGN_IN_PATH};
-use crate::tokens::refresh_token_hash;
+use crate::tokens::token_hash_sha256;
 
 use super::{TestContext, TestUser};
 
@@ -93,7 +93,7 @@ pub async fn sign_in_revokes_existing_refresh_tokens<C: TestContext>() {
     let auth_config = ctx.auth_config();
 
     let test_user = TestUser::new(&base_url, &client, auth_config).await;
-    let refresh_token_hash = refresh_token_hash(&test_user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&test_user.refresh_token);
 
     let refresh_token = ctx
         .refresh_token_get(&refresh_token_hash)
@@ -129,7 +129,7 @@ pub async fn sign_in_expired_refresh_token_requires_sign_in<C: TestContext>() {
     let auth_config = ctx.auth_config();
 
     let user = TestUser::new(&base_url, &client, auth_config).await;
-    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
 
     // Expire the token
     ctx.refresh_token_expire(&refresh_token_hash).await;
