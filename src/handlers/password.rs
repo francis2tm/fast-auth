@@ -128,7 +128,7 @@ pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
     // Consume the token
     let user_id = auth
         .backend()
-        .verification_token_consume(&hash, VerificationTokenType::PasswordReset)
+        .verification_token_consume_atomic(&hash, VerificationTokenType::PasswordReset)
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::InvalidToken)?;

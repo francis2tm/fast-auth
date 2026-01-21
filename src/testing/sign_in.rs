@@ -10,6 +10,7 @@ use crate::handlers::{ME_PATH, SIGN_IN_PATH};
 use crate::tokens::token_hash_sha256;
 
 use super::{TestContext, TestUser};
+use crate::AuthBackend;
 
 /// Successful sign-in should set cookies and update `last_sign_in_at`.
 pub async fn sign_in_returns_tokens_for_valid_credentials<C: TestContext>() {
@@ -51,8 +52,10 @@ pub async fn sign_in_returns_tokens_for_valid_credentials<C: TestContext>() {
     assert_eq!(parsed.user.email, user.email);
 
     let stored = ctx
+        .backend()
         .user_find_by_email(&user.email)
         .await
+        .expect("db query")
         .expect("user present after sign-in");
     assert!(
         stored.last_sign_in_at().is_some(),

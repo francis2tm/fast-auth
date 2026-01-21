@@ -57,7 +57,7 @@ pub async fn sign_out<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     // Revoke refresh token via backend
     let revoked = auth
         .backend()
-        .refresh_token_revoke(&refresh_token_hash)
+        .refresh_token_revoke_atomic(&refresh_token_hash)
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?;
 

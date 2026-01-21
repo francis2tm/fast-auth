@@ -45,6 +45,7 @@ use serde_json::json;
 use std::future::Future;
 use uuid::Uuid;
 
+use crate::AuthBackend;
 use crate::handlers::SIGN_UP_PATH;
 use crate::{AuthConfig, AuthUser};
 
@@ -134,8 +135,8 @@ pub trait TestContext: Sized + Send + Sync {
     /// Get the auth configuration.
     fn auth_config(&self) -> &AuthConfig;
 
-    /// Find a user by email (for test assertions).
-    fn user_find_by_email(&self, email: &str) -> impl Future<Output = Option<Self::User>> + Send;
+    /// Get a reference to the auth backend for direct database operations.
+    fn backend(&self) -> &impl AuthBackend;
 
     /// Get a refresh token by its hash (for test assertions).
     fn refresh_token_get(
@@ -145,9 +146,6 @@ pub trait TestContext: Sized + Send + Sync {
 
     /// Manually expire a refresh token by its hash (for testing expiration).
     fn refresh_token_expire(&self, refresh_token_hash: &str) -> impl Future<Output = ()> + Send;
-
-    /// Manually revoke a refresh token by its hash (for testing revocation).
-    fn refresh_token_revoke(&self, refresh_token_hash: &str) -> impl Future<Output = ()> + Send;
 }
 
 /// Test suite for fast-auth.

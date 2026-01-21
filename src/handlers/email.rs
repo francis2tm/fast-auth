@@ -122,7 +122,7 @@ pub async fn email_confirm<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
     // Consume the token
     let user_id = auth
         .backend()
-        .verification_token_consume(&hash, VerificationTokenType::EmailConfirm)
+        .verification_token_consume_atomic(&hash, VerificationTokenType::EmailConfirm)
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::InvalidToken)?;

@@ -10,6 +10,7 @@ use crate::AuthUser;
 use crate::handlers::SIGN_UP_PATH;
 
 use super::TestContext;
+use crate::AuthBackend;
 
 /// Verifies that sign-up persists a new user and emits auth cookies.
 pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
@@ -55,8 +56,10 @@ pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
 
     // Verify user was persisted
     let stored_user = ctx
+        .backend()
         .user_find_by_email(&email)
         .await
+        .expect("db query")
         .expect("user persisted");
     assert_eq!(stored_user.email(), email);
 }
@@ -107,7 +110,11 @@ pub async fn sign_up_rejects_invalid_email<C: TestContext>() {
     );
 
     assert!(
-        ctx.user_find_by_email("not-an-email").await.is_none(),
+        ctx.backend()
+            .user_find_by_email("not-an-email")
+            .await
+            .unwrap()
+            .is_none(),
         "failed requests must not create users",
     );
 }
@@ -136,7 +143,11 @@ pub async fn sign_up_enforces_password_complexity_rules<C: TestContext>() {
     );
 
     assert!(
-        ctx.user_find_by_email(&email).await.is_none(),
+        ctx.backend()
+            .user_find_by_email(&email)
+            .await
+            .unwrap()
+            .is_none(),
         "password checks must run before inserting the user",
     );
 }
