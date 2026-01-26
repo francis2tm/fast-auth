@@ -1,10 +1,10 @@
 //! Authentication middleware for Axum.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
     cookies::{access_token_cookie_clear, access_token_cookie_create, refresh_token_cookie_clear},
     error::AuthError,
-    tokens::{access_token_generate, access_token_validate, refresh_token_hash},
+    tokens::{access_token_generate, access_token_validate, token_hash_sha256},
 };
 use axum::{
     body::Body,
@@ -54,8 +54,8 @@ impl Default for UserContext {
 /// If a request arrives without a JWT but with a valid refresh token, the middleware
 /// will automatically generate a new JWT and add it to the response cookies. This
 /// happens transparently without redirects, working for all request types (GET, POST, etc.).
-pub async fn base<B: AuthBackend, H: AuthHooks<B::User>>(
-    State(auth): State<Auth<B, H>>,
+pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    State(auth): State<Auth<B, H, E>>,
     mut request: Request<Body>,
     next: Next,
 ) -> Response {
@@ -112,11 +112,11 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>>(
 /// Try to refresh access token using refresh token.
 ///
 /// Returns (access_token, user_id, email) if successful.
-async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>>(
-    auth: &Auth<B, H>,
+async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    auth: &Auth<B, H, E>,
     refresh_token: &str,
 ) -> Result<(String, Uuid, String), AuthError> {
-    let refresh_token_hash = refresh_token_hash(refresh_token);
+    let refresh_token_hash = token_hash_sha256(refresh_token);
 
     // Validate refresh token and get user_id
     let user_id = auth

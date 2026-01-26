@@ -7,9 +7,10 @@ use reqwest::{StatusCode, header};
 use serde_json::Value;
 
 use crate::handlers::ME_PATH;
-use crate::tokens::{AccessTokenClaims, refresh_token_hash};
+use crate::tokens::{AccessTokenClaims, token_hash_sha256};
 
 use super::{TestContext, TestUser};
+use crate::AuthBackend;
 
 /// Create an expired access token for testing.
 fn create_expired_access_token(user_id: &str, email: &str, config: &crate::AuthConfig) -> String {
@@ -145,7 +146,7 @@ pub async fn protected_route_rejects_expired_refresh_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
-    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
 
     // Expire the token
     ctx.refresh_token_expire(&refresh_token_hash).await;
@@ -180,10 +181,13 @@ pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
-    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
 
-    // Revoke the token
-    ctx.refresh_token_revoke(&refresh_token_hash).await;
+    // Revoke the token via AuthBackend
+    ctx.backend()
+        .refresh_token_revoke_atomic(&refresh_token_hash)
+        .await
+        .expect("revoke token");
 
     let response = client
         .get(format!("{}{}", base_url, ME_PATH))

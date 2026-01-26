@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use std::future::Future;
 use uuid::Uuid;
 
+use crate::verification::VerificationTokenType;
+
 /// Minimal user interface required by fast-auth.
 ///
 /// Implement this trait for your user type to use with [`AuthBackend`].
@@ -140,10 +142,11 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Revoke a specific refresh token by its hash.
+    /// Atomically revoke a specific refresh token by its hash.
     ///
-    /// Returns `true` if a token was revoked, `false` if not found or already revoked.
-    fn refresh_token_revoke(
+    /// This must be implemented as a single atomic operation (e.g., `UPDATE ... WHERE revoked_at IS NULL`)
+    /// to prevent race conditions. Returns `true` if a token was revoked, `false` if not found or already revoked.
+    fn refresh_token_revoke_atomic(
         &self,
         refresh_token_hash: &str,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
@@ -155,4 +158,41 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         &self,
         refresh_token_hash: &str,
     ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
+
+    // --- Verification Token Methods ---
+
+    /// Create a verification token (email confirm or password reset).
+    fn verification_token_create(
+        &self,
+        user_id: Uuid,
+        token_hash: &str,
+        token_type: VerificationTokenType,
+        expires_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// Atomically consume a verification token.
+    ///
+    /// This must be implemented as a single atomic operation (e.g., `UPDATE ... WHERE used_at IS NULL RETURNING user_id`)
+    /// to prevent race conditions. Returns the user_id if the token is valid and not expired/used.
+    /// Marks the token as used upon successful validation.
+    fn verification_token_consume_atomic(
+        &self,
+        token_hash: &str,
+        token_type: crate::verification::VerificationTokenType,
+    ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
+
+    // --- User Update Methods ---
+
+    /// Mark user's email as confirmed (sets email_confirmed_at).
+    fn user_email_confirm(
+        &self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    /// Update user's password hash.
+    fn user_password_update(
+        &self,
+        user_id: Uuid,
+        password_hash: &str,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }

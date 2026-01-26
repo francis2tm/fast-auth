@@ -1,13 +1,16 @@
 //! Handler for getting current user information.
 
-use crate::{Auth, AuthBackend, AuthHooks, AuthUser, CurrentUser, UserResponse, error::AuthError};
+use crate::{
+    Auth, AuthBackend, AuthHooks, AuthUser, CurrentUser, EmailSender, UserResponse,
+    error::AuthError,
+};
 use axum::{Json, Router, extract::State, routing::get};
 
 pub const ME_PATH: &str = "/auth/me";
 
 /// Returns routes for the /auth/me endpoint.
-pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
-    Router::new().route(ME_PATH, get(me_get::<B, H>))
+pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>() -> Router<Auth<B, H, E>> {
+    Router::new().route(ME_PATH, get(me_get::<B, H, E>))
 }
 
 /// Get current authenticated user.
@@ -18,9 +21,9 @@ pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> 
 /// # Requires
 /// - Valid JWT access token (httpOnly cookie)
 /// - `auth::middleware::base` middleware applied to route
-pub async fn me_get<B: AuthBackend, H: AuthHooks<B::User>>(
+pub async fn me_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     current_user: CurrentUser,
-    State(auth): State<Auth<B, H>>,
+    State(auth): State<Auth<B, H, E>>,
 ) -> Result<Json<UserResponse>, AuthError> {
     // Query user from database to get fresh data
     let user = auth

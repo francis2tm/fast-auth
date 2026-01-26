@@ -1,7 +1,7 @@
 //! Handler for user sign-up.
 
 use crate::{
-    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, UserResponse,
+    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, EmailSender, UserResponse,
     email::email_validate_normalize,
     error::AuthError,
     password::{password_hash, password_validate},
@@ -18,8 +18,9 @@ use serde::Deserialize;
 pub const SIGN_UP_PATH: &str = "/auth/sign-up";
 
 /// Returns routes for the /auth/sign-up endpoint.
-pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>>() -> Router<Auth<B, H>> {
-    Router::new().route(SIGN_UP_PATH, post(sign_up::<B, H>))
+pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
+-> Router<Auth<B, H, E>> {
+    Router::new().route(SIGN_UP_PATH, post(sign_up::<B, H, E>))
 }
 
 /// Request body for sign-up.
@@ -36,8 +37,8 @@ pub struct SignUpRequest {
 /// Creates a new user account with email and password.
 /// Sets access and refresh tokens as httpOnly cookies.
 /// Calls the `on_sign_up` hook after successful user creation.
-pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>>(
-    State(auth): State<Auth<B, H>>,
+pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignUpRequest>,
 ) -> Result<Response, AuthError> {
     let config = auth.config();

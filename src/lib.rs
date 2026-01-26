@@ -27,6 +27,7 @@ mod backend;
 mod config;
 mod cookies;
 mod email;
+mod email_sender;
 mod error;
 mod extractors;
 pub mod handlers;
@@ -35,10 +36,12 @@ mod password;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod tokens;
+pub mod verification;
 
 use axum::Router;
 pub use backend::{AuthBackend, AuthUser};
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
+pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
 pub use extractors::CurrentUser;
 pub use handlers::sign_in::SignInRequest;
@@ -102,6 +105,7 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 /// Generic over:
 /// - `B`: The storage backend implementing [`AuthBackend`]
 /// - `H`: Optional lifecycle hooks implementing [`AuthHooks`]
+/// - `E`: Optional email sender implementing [`EmailSender`]
 ///
 /// # Example
 ///
@@ -113,31 +117,44 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 /// let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
 /// ```
 #[derive(Clone)]
-pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = ()> {
+pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = (), E: EmailSender = ()> {
     config: Arc<AuthConfig>,
     backend: B,
     hooks: H,
+    email_sender: E,
 }
 
-impl<B: AuthBackend> Auth<B, ()> {
-    /// Create an auth instance with default (no-op) hooks.
+impl<B: AuthBackend> Auth<B, (), ()> {
+    /// Create an auth instance with default (no-op) hooks and email sender.
     pub fn new(config: AuthConfig, backend: B) -> Result<Self, AuthConfigError> {
         config.validate()?;
         Ok(Self {
             config: Arc::new(config),
             backend,
             hooks: (),
+            email_sender: (),
         })
     }
 }
 
-impl<B: AuthBackend, H: AuthHooks<B::User>> Auth<B, H> {
+impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
     /// Attach custom lifecycle hooks.
-    pub fn with_hooks<NewH: AuthHooks<B::User>>(self, hooks: NewH) -> Auth<B, NewH> {
+    pub fn with_hooks<NewH: AuthHooks<B::User>>(self, hooks: NewH) -> Auth<B, NewH, E> {
         Auth {
             config: self.config,
             backend: self.backend,
             hooks,
+            email_sender: self.email_sender,
+        }
+    }
+
+    /// Attach a custom email sender.
+    pub fn with_email_sender<NewE: EmailSender>(self, email_sender: NewE) -> Auth<B, H, NewE> {
+        Auth {
+            config: self.config,
+            backend: self.backend,
+            hooks: self.hooks,
+            email_sender,
         }
     }
 
@@ -145,13 +162,15 @@ impl<B: AuthBackend, H: AuthHooks<B::User>> Auth<B, H> {
     pub fn routes<S>(&self) -> Router<S>
     where
         S: Clone + Send + Sync + 'static,
-        Auth<B, H>: axum::extract::FromRef<S>,
+        Auth<B, H, E>: axum::extract::FromRef<S>,
     {
         Router::new()
-            .merge(handlers::sign_up_routes::<B, H>())
-            .merge(handlers::sign_in_routes::<B, H>())
-            .merge(handlers::sign_out_routes::<B, H>())
-            .merge(handlers::me_routes::<B, H>())
+            .merge(handlers::sign_up_routes::<B, H, E>())
+            .merge(handlers::sign_in_routes::<B, H, E>())
+            .merge(handlers::sign_out_routes::<B, H, E>())
+            .merge(handlers::me_routes::<B, H, E>())
+            .merge(handlers::email_confirm_routes::<B, H, E>())
+            .merge(handlers::password_reset_routes::<B, H, E>())
             .with_state(self.clone())
     }
 
@@ -168,5 +187,10 @@ impl<B: AuthBackend, H: AuthHooks<B::User>> Auth<B, H> {
     /// Returns a reference to the lifecycle hooks.
     pub(crate) fn hooks(&self) -> &H {
         &self.hooks
+    }
+
+    /// Returns a reference to the email sender.
+    pub fn email_sender(&self) -> &E {
+        &self.email_sender
     }
 }

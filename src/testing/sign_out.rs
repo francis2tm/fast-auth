@@ -4,7 +4,7 @@ use reqwest::{StatusCode, header};
 
 use crate::SignOutResponse;
 use crate::handlers::SIGN_OUT_PATH;
-use crate::tokens::refresh_token_hash;
+use crate::tokens::token_hash_sha256;
 
 use super::{TestContext, TestUser};
 
@@ -36,7 +36,7 @@ pub async fn sign_out_revokes_refresh_token_and_clears_cookies<C: TestContext>()
     let payload: SignOutResponse = serde_json::from_slice(&body).unwrap();
     assert!(payload.success);
 
-    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
     let revoked = ctx
         .refresh_token_get(&refresh_token_hash)
         .await
@@ -95,7 +95,7 @@ pub async fn sign_out_rejects_unknown_refresh_token_without_leaking_state<C: Tes
         "failed revocations must not emit Set-Cookie headers",
     );
 
-    let refresh_token_hash = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
     let stored = ctx
         .refresh_token_get(&refresh_token_hash)
         .await
@@ -123,7 +123,7 @@ pub async fn sign_out_cannot_be_replayed_with_same_refresh_token<C: TestContext>
 
     assert_eq!(first.status(), StatusCode::OK);
 
-    let refresh_token_hash: String = refresh_token_hash(&user.refresh_token);
+    let refresh_token_hash: String = token_hash_sha256(&user.refresh_token);
     let revoked = ctx
         .refresh_token_get(&refresh_token_hash)
         .await
