@@ -193,7 +193,3 @@ use fast_auth::test_suite;
 // Generates individual #[tokio::test] functions
 test_suite!(TestApp);
 ```
-
-## License
-
-Licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE) or http://www.apache.org/licenses/LICENSE-2.0).
