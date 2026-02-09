@@ -34,11 +34,15 @@ pub struct SignInRequest {
 ///
 /// Authenticates user with email and password.
 /// Sets access and refresh tokens as httpOnly cookies.
+/// Returns `EmailNotConfirmed` when `require_email_confirmation` is enabled and the user has not
+/// confirmed their email.
 /// Calls the `on_sign_in` hook after successful authentication.
 pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignInRequest>,
 ) -> Result<Response, AuthError> {
+    let config = auth.config();
+
     // Normalize email for consistent lookup
     let email = email_validate_normalize(&req.email)?;
 
@@ -55,6 +59,11 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
 
     if !password_valid {
         return Err(AuthError::InvalidCredentials);
+    }
+
+    // Check email confirmation if required
+    if config.require_email_confirmation && user.email_confirmed_at().is_none() {
+        return Err(AuthError::EmailNotConfirmed);
     }
 
     // Update last_sign_in_at

@@ -134,6 +134,11 @@ async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
         .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::UserNotFound)?;
 
+    // Prevent silent refresh from authenticating users before email verification.
+    if auth.config().require_email_confirmation && user.email_confirmed_at().is_none() {
+        return Err(AuthError::EmailNotConfirmed);
+    }
+
     // Generate new access token
     let access_token = access_token_generate(user.id(), user.email().to_owned(), auth.config())?;
 

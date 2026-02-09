@@ -36,6 +36,7 @@ pub mod protected_route;
 pub mod sign_in;
 pub mod sign_out;
 pub mod sign_up;
+pub mod verification;
 
 use axum_extra::extract::cookie::Cookie;
 use chrono::{DateTime, Utc};
@@ -132,6 +133,14 @@ pub trait TestContext: Sized + Send + Sync {
     /// Spawn the test app and return (base_url, http_client, context).
     fn spawn() -> impl Future<Output = (String, Client, Self)> + Send;
 
+    /// Spawn the test app with email confirmation required for authentication.
+    ///
+    /// Default implementation falls back to `spawn()`. Integrations should override this
+    /// when they need to validate `require_email_confirmation = true` behavior.
+    fn spawn_require_email_confirmation() -> impl Future<Output = (String, Client, Self)> + Send {
+        Self::spawn()
+    }
+
     /// Get the auth configuration.
     fn auth_config(&self) -> &AuthConfig;
 
@@ -181,6 +190,22 @@ impl<C: TestContext> Suite<C> {
         protected_route::protected_route_refreshes_expired_access_token::<C>().await;
         protected_route::protected_route_rejects_expired_refresh_token::<C>().await;
         protected_route::protected_route_rejects_revoked_refresh_token::<C>().await;
+
+        // Verification tests
+        verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
+        verification::sign_up_skips_cookie_issuance_when_confirmation_required::<C>().await;
+        verification::protected_route_rejects_unconfirmed_user_when_confirmation_required::<C>()
+            .await;
+        verification::email_confirm_marks_user_confirmed::<C>().await;
+        verification::email_confirm_supports_get_link_flow::<C>().await;
+        verification::email_confirm_rejects_expired_token_get::<C>().await;
+        verification::email_confirm_token_is_single_use::<C>().await;
+        verification::password_reset_updates_password_and_revokes_sessions::<C>().await;
+        verification::password_reset_rejects_expired_token::<C>().await;
+        verification::password_reset_token_is_single_use::<C>().await;
+        verification::verification_token_type_mismatch_is_rejected::<C>().await;
+        verification::verification_rejects_malformed_token::<C>().await;
+        verification::password_reset_does_not_change_password_on_invalid_token::<C>().await;
     }
 }
 
@@ -275,6 +300,71 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn protected_route_rejects_revoked_refresh_token() {
             $crate::testing::protected_route::protected_route_rejects_revoked_refresh_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_rejects_unconfirmed_user_when_confirmation_required() {
+            $crate::testing::verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_skips_cookie_issuance_when_confirmation_required() {
+            $crate::testing::verification::sign_up_skips_cookie_issuance_when_confirmation_required::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_rejects_unconfirmed_user_when_confirmation_required() {
+            $crate::testing::verification::protected_route_rejects_unconfirmed_user_when_confirmation_required::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn email_confirm_marks_user_confirmed() {
+            $crate::testing::verification::email_confirm_marks_user_confirmed::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn email_confirm_supports_get_link_flow() {
+            $crate::testing::verification::email_confirm_supports_get_link_flow::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn email_confirm_rejects_expired_token_get() {
+            $crate::testing::verification::email_confirm_rejects_expired_token_get::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn email_confirm_token_is_single_use() {
+            $crate::testing::verification::email_confirm_token_is_single_use::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn password_reset_updates_password_and_revokes_sessions() {
+            $crate::testing::verification::password_reset_updates_password_and_revokes_sessions::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn password_reset_rejects_expired_token() {
+            $crate::testing::verification::password_reset_rejects_expired_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn password_reset_token_is_single_use() {
+            $crate::testing::verification::password_reset_token_is_single_use::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn verification_token_type_mismatch_is_rejected() {
+            $crate::testing::verification::verification_token_type_mismatch_is_rejected::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn verification_rejects_malformed_token() {
+            $crate::testing::verification::verification_rejects_malformed_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn password_reset_does_not_change_password_on_invalid_token() {
+            $crate::testing::verification::password_reset_does_not_change_password_on_invalid_token::<$context>().await;
         }
     };
 }

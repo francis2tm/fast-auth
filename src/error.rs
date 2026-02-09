@@ -24,6 +24,9 @@ pub enum AuthError {
     #[error("User not found")]
     UserNotFound,
 
+    #[error("Email not confirmed")]
+    EmailNotConfirmed,
+
     #[error("Invalid email format")]
     InvalidEmail,
 
@@ -54,6 +57,7 @@ impl IntoResponse for AuthError {
             AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, self.to_string()),
             AuthError::UserAlreadyExists => (StatusCode::CONFLICT, self.to_string()),
             AuthError::UserNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AuthError::EmailNotConfirmed => (StatusCode::FORBIDDEN, self.to_string()),
             AuthError::InvalidEmail => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::WeakPassword(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::RefreshTokenInvalid => (StatusCode::UNAUTHORIZED, self.to_string()),

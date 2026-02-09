@@ -7,7 +7,12 @@ use crate::{
     tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate},
     verification::{VerificationTokenType, verification_link_build},
 };
-use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
+use axum::{
+    Json, Router,
+    extract::{Query, State},
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde::{Deserialize, Serialize};
 
 pub const EMAIL_CONFIRM_SEND_PATH: &str = "/auth/email/confirm/send";
@@ -18,7 +23,7 @@ pub fn email_confirm_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 -> Router<Auth<B, H, E>> {
     Router::new()
         .route(EMAIL_CONFIRM_SEND_PATH, post(email_confirm_send::<B, H, E>))
-        .route(EMAIL_CONFIRM_PATH, post(email_confirm::<B, H, E>))
+        .route(EMAIL_CONFIRM_PATH, get(email_confirm_get::<B, H, E>))
 }
 
 /// Request body for sending confirmation email.
@@ -35,9 +40,9 @@ pub struct EmailConfirmSendResponse {
     pub message: String,
 }
 
-/// Request body for confirming email.
+/// Query for browser-based email confirmation links.
 #[derive(Debug, Deserialize)]
-pub struct EmailConfirmRequest {
+pub struct EmailConfirmQuery {
     /// Verification token from email link.
     pub token: String,
 }
@@ -92,9 +97,10 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
 
             // Send email
             let subject = "Confirm your email address";
+            let expires_in_seconds = config.email_verification_token_expiry.as_secs();
             let body = format!(
-                "Please confirm your email address by clicking this link:\n\n{}\n\nThis link expires in 1 hour.",
-                verify_link
+                "Please confirm your email address by clicking this link:\n\n{}\n\nThis link expires in {} seconds.",
+                verify_link, expires_in_seconds
             );
 
             if let Err(e) = auth.email_sender().send(&email, subject, &body).await {
@@ -111,10 +117,10 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
     }))
 }
 
-/// Confirm email address using verification token.
-pub async fn email_confirm<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+/// Confirm email from a browser verification link (`GET /auth/email/confirm?token=...`).
+pub async fn email_confirm_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
-    Json(req): Json<EmailConfirmRequest>,
+    Query(req): Query<EmailConfirmQuery>,
 ) -> Result<impl IntoResponse, AuthError> {
     // Hash the token for lookup
     let hash = token_hash_sha256(&req.token);

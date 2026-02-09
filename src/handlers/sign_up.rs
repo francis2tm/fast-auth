@@ -35,7 +35,7 @@ pub struct SignUpRequest {
 /// Sign up a new user.
 ///
 /// Creates a new user account with email and password.
-/// Sets access and refresh tokens as httpOnly cookies.
+/// Sets access and refresh tokens as httpOnly cookies unless email confirmation is required.
 /// Calls the `on_sign_up` hook after successful user creation.
 pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
@@ -72,9 +72,6 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     // Call the on_sign_up hook
     auth.hooks().on_sign_up(&user).await;
 
-    // Generate tokens and cookies
-    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
-
     // Build response with user information
     let user_response = UserResponse {
         id: user.id().to_string(),
@@ -87,5 +84,12 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         user: user_response,
     };
 
+    // If email confirmation is required, do not set cookies until email is confirmed
+    if config.require_email_confirmation && user.email_confirmed_at().is_none() {
+        return Ok(Json(response_body).into_response());
+    }
+
+    // Generate tokens and cookies
+    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
     Ok((jar, Json(response_body)).into_response())
 }

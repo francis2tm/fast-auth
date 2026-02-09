@@ -151,6 +151,12 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         refresh_token_hash: &str,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
+    /// Atomically revoke all active refresh tokens for a user.
+    fn refresh_tokens_revoke_all_atomic(
+        &self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
     /// Validate a refresh token and return the associated user ID.
     ///
     /// Returns `None` if the token is invalid, expired, or revoked.
