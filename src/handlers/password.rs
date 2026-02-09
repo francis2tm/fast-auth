@@ -59,7 +59,7 @@ pub struct PasswordResetResponse {
 pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordForgotRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<Json<PasswordForgotResponse>, AuthError> {
     let config = auth.config();
 
     // Normalize email
@@ -94,9 +94,10 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
 
         // Send email
         let subject = "Reset your password";
+        let expires_in_seconds = config.password_reset_token_expiry.as_secs();
         let body = format!(
-            "You requested a password reset. Click this link to set a new password:\n\n{}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, you can safely ignore this email.",
-            reset_link
+            "You requested a password reset. Click this link to set a new password:\n\n{}\n\nThis link expires in {} seconds.\n\nIf you didn't request this, you can safely ignore this email.",
+            reset_link, expires_in_seconds
         );
 
         if let Err(e) = auth.email_sender().send(&email, subject, &body).await {
@@ -117,33 +118,46 @@ pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordResetRequest>,
 ) -> Result<impl IntoResponse, AuthError> {
-    let config = auth.config();
-
-    // Validate password strength
-    password_validate(&req.password, config)?;
-
-    // Hash the token for lookup
-    let hash = token_hash_sha256(&req.token);
-
-    // Consume the token
-    let user_id = auth
-        .backend()
-        .verification_token_consume_atomic(&hash, VerificationTokenType::PasswordReset)
-        .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
-        .ok_or(AuthError::InvalidToken)?;
-
-    // Hash the new password
-    let hashed_password = password_hash(&req.password)?;
-
-    // Update password
-    auth.backend()
-        .user_password_update(user_id, &hashed_password)
-        .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
+    password_reset_apply(&auth, &req.token, &req.password).await?;
 
     Ok(Json(PasswordResetResponse {
         message: "Password reset successfully. You can now sign in with your new password."
             .to_string(),
-    }))
+    })
+    .into_response())
+}
+
+/// Apply a password reset from a verification token.
+///
+/// This validates password strength, atomically consumes a `PasswordReset` token,
+/// updates the user's password hash, and revokes all active refresh sessions.
+///
+/// Returns [`AuthError::InvalidToken`] when the token is invalid, expired, or already used.
+async fn password_reset_apply<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    auth: &Auth<B, H, E>,
+    token: &str,
+    password: &str,
+) -> Result<(), AuthError> {
+    let config = auth.config();
+
+    // Validate password strength
+    password_validate(password, config)?;
+
+    // Hash the token for lookup
+    let hash = token_hash_sha256(token);
+
+    // Hash the new password
+    let hashed_password = password_hash(password)?;
+
+    let applied = auth
+        .backend()
+        .password_reset_apply_atomic(&hash, &hashed_password)
+        .await
+        .map_err(|e| AuthError::Backend(e.to_string()))?;
+
+    if !applied {
+        return Err(AuthError::InvalidToken);
+    }
+
+    Ok(())
 }

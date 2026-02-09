@@ -114,6 +114,74 @@ impl Default for AuthConfig {
 }
 
 impl AuthConfig {
+    /// Build auth config from environment variables.
+    ///
+    /// Required:
+    /// - `AUTH_JWT_SECRET`
+    ///
+    /// Optional variables fall back to `Default` values when not provided.
+    ///
+    pub fn from_env() -> Result<Self, AuthConfigError> {
+        let mut cfg = Self::default();
+        cfg.jwt_secret = env_var_required("AUTH_JWT_SECRET")?;
+        cfg.access_token_expiry = Duration::from_secs(env_var_parse_or_default(
+            "AUTH_ACCESS_TOKEN_EXPIRY_SECS",
+            cfg.access_token_expiry.as_secs(),
+            "u64",
+        )?);
+        cfg.refresh_token_expiry = Duration::from_secs(env_var_parse_or_default(
+            "AUTH_REFRESH_TOKEN_EXPIRY_SECS",
+            cfg.refresh_token_expiry.as_secs(),
+            "u64",
+        )?);
+        cfg.password_min_length =
+            env_var_parse_or_default("AUTH_PASSWORD_MIN_LENGTH", cfg.password_min_length, "usize")?;
+        cfg.password_max_length =
+            env_var_parse_or_default("AUTH_PASSWORD_MAX_LENGTH", cfg.password_max_length, "usize")?;
+        cfg.password_require_letter =
+            env_var_bool_or_default("AUTH_PASSWORD_REQUIRE_LETTER", cfg.password_require_letter)?;
+        cfg.password_require_number =
+            env_var_bool_or_default("AUTH_PASSWORD_REQUIRE_NUMBER", cfg.password_require_number)?;
+        cfg.cookie_secure = env_var_bool_or_default("AUTH_COOKIE_SECURE", cfg.cookie_secure)?;
+        cfg.cookie_same_site =
+            env_var_cookie_same_site_or_default("AUTH_COOKIE_SAME_SITE", cfg.cookie_same_site)?;
+        cfg.email_verification_token_expiry = Duration::from_secs(env_var_parse_or_default(
+            "AUTH_EMAIL_VERIFICATION_TOKEN_EXPIRY_SECS",
+            cfg.email_verification_token_expiry.as_secs(),
+            "u64",
+        )?);
+        cfg.password_reset_token_expiry = Duration::from_secs(env_var_parse_or_default(
+            "AUTH_PASSWORD_RESET_TOKEN_EXPIRY_SECS",
+            cfg.password_reset_token_expiry.as_secs(),
+            "u64",
+        )?);
+        cfg.require_email_confirmation = env_var_bool_or_default(
+            "AUTH_REQUIRE_EMAIL_CONFIRMATION",
+            cfg.require_email_confirmation,
+        )?;
+
+        if let Some(v) = env_var_optional("AUTH_JWT_ISSUER") {
+            cfg.jwt_issuer = v;
+        }
+        if let Some(v) = env_var_optional("AUTH_JWT_AUDIENCE") {
+            cfg.jwt_audience = v;
+        }
+        if let Some(v) = env_var_optional("AUTH_COOKIE_ACCESS_TOKEN_NAME") {
+            cfg.cookie_access_token_name = v;
+        }
+        if let Some(v) = env_var_optional("AUTH_COOKIE_REFRESH_TOKEN_NAME") {
+            cfg.cookie_refresh_token_name = v;
+        }
+        if let Some(v) = env_var_optional("AUTH_COOKIE_PATH") {
+            cfg.cookie_path = v;
+        }
+        cfg.cookie_domain = env_var_optional("AUTH_COOKIE_DOMAIN");
+        cfg.email_link_base_url = env_var_optional("AUTH_EMAIL_LINK_BASE_URL");
+
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
     /// Validate configuration
     pub fn validate(&self) -> Result<(), AuthConfigError> {
         if self.jwt_secret.is_empty() {
@@ -154,6 +222,57 @@ impl AuthConfig {
         }
 
         Ok(())
+    }
+}
+
+fn env_var_required(key: &'static str) -> Result<String, AuthConfigError> {
+    std::env::var(key).map_err(|_| AuthConfigError::MissingEnv(key))
+}
+
+fn env_var_optional(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
+fn env_var_parse_or_default<T: std::str::FromStr>(
+    key: &str,
+    default: T,
+    type_name: &str,
+) -> Result<T, AuthConfigError> {
+    match env_var_optional(key) {
+        Some(v) => v
+            .parse::<T>()
+            .map_err(|_| AuthConfigError::Invalid(format!("{key} must be a valid {type_name}"))),
+        _ => Ok(default),
+    }
+}
+
+fn env_var_bool_or_default(key: &str, default: bool) -> Result<bool, AuthConfigError> {
+    match env_var_optional(key) {
+        Some(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Ok(true),
+            "0" | "false" | "no" | "off" => Ok(false),
+            _ => Err(AuthConfigError::Invalid(format!(
+                "{key} must be a valid boolean"
+            ))),
+        },
+        _ => Ok(default),
+    }
+}
+
+fn env_var_cookie_same_site_or_default(
+    key: &str,
+    default: CookieSameSite,
+) -> Result<CookieSameSite, AuthConfigError> {
+    match env_var_optional(key) {
+        Some(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "none" => Ok(CookieSameSite::None),
+            "lax" => Ok(CookieSameSite::Lax),
+            "strict" => Ok(CookieSameSite::Strict),
+            _ => Err(AuthConfigError::Invalid(format!(
+                "{key} must be one of: none, lax, strict"
+            ))),
+        },
+        _ => Ok(default),
     }
 }
 

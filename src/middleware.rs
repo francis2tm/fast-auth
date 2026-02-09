@@ -2,9 +2,15 @@
 
 use crate::{
     Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
-    cookies::{access_token_cookie_clear, access_token_cookie_create, refresh_token_cookie_clear},
+    cookies::{
+        access_token_cookie_clear, access_token_cookie_create, refresh_token_cookie_clear,
+        refresh_token_cookie_create,
+    },
     error::AuthError,
-    tokens::{access_token_generate, access_token_validate, token_hash_sha256},
+    tokens::{
+        access_token_generate, access_token_validate, token_expiry_calculate, token_hash_sha256,
+        token_with_hash_generate,
+    },
 };
 use axum::{
     body::Body,
@@ -47,13 +53,13 @@ impl Default for UserContext {
 /// # Behavior
 /// - **JWT present**: Validates JWT and injects authenticated UserContext
 /// - **JWT invalid**: Clears auth cookies (potential tampering)
-/// - **No JWT but refresh token present**: Silently generates new JWT and injects authenticated UserContext
+/// - **No JWT but refresh token present**: Silently rotates refresh token, generates new JWT, and injects authenticated UserContext
 /// - **No auth cookies**: Injects anonymous UserContext
 ///
 /// # Silent Authentication
 /// If a request arrives without a JWT but with a valid refresh token, the middleware
-/// will automatically generate a new JWT and add it to the response cookies. This
-/// happens transparently without redirects, working for all request types (GET, POST, etc.).
+/// will atomically exchange that refresh token for a new refresh+access cookie pair.
+/// This happens transparently without redirects, working for all request types (GET, POST, etc.).
 pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     mut request: Request<Body>,
@@ -88,16 +94,17 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     // Try refresh token if not authenticated
     if context.user_id.is_none()
         && let Some(refresh_cookie) = jar.get(&config.cookie_refresh_token_name)
-        && let Ok((access_token, user_id, email)) =
+        && let Ok((access_token, refresh_token, user_id, email)) =
             try_refresh_token(&auth, refresh_cookie.value()).await
     {
         context.user_id = Some(user_id);
         context.email = Some(email);
         context.role = "authenticated".to_string();
 
-        // Add new JWT cookie to response
+        // Add new auth cookies to response.
         let access_cookie = access_token_cookie_create(access_token, config);
-        jar = jar.add(access_cookie);
+        let refresh_cookie = refresh_token_cookie_create(refresh_token, config);
+        jar = jar.add(access_cookie).add(refresh_cookie);
     }
 
     // Inject context into request extensions
@@ -111,17 +118,23 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
 
 /// Try to refresh access token using refresh token.
 ///
-/// Returns (access_token, user_id, email) if successful.
+/// Returns `(access_token, refresh_token, user_id, email)` if successful.
 async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     auth: &Auth<B, H, E>,
     refresh_token: &str,
-) -> Result<(String, Uuid, String), AuthError> {
-    let refresh_token_hash = token_hash_sha256(refresh_token);
+) -> Result<(String, String, Uuid, String), AuthError> {
+    let current_refresh_token_hash = token_hash_sha256(refresh_token);
+    let (next_refresh_token, next_refresh_token_hash) = token_with_hash_generate();
+    let next_refresh_token_expiry = token_expiry_calculate(auth.config().refresh_token_expiry);
 
-    // Validate refresh token and get user_id
+    // Atomically consume the current refresh token and issue a replacement token.
     let user_id = auth
         .backend()
-        .refresh_token_validate(&refresh_token_hash)
+        .refresh_token_exchange_atomic(
+            &current_refresh_token_hash,
+            &next_refresh_token_hash,
+            next_refresh_token_expiry,
+        )
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?
         .ok_or(AuthError::RefreshTokenInvalid)?;
@@ -136,13 +149,22 @@ async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
 
     // Prevent silent refresh from authenticating users before email verification.
     if auth.config().require_email_confirmation && user.email_confirmed_at().is_none() {
+        auth.backend()
+            .refresh_token_revoke_atomic(&next_refresh_token_hash)
+            .await
+            .map_err(|e| AuthError::Backend(e.to_string()))?;
         return Err(AuthError::EmailNotConfirmed);
     }
 
     // Generate new access token
     let access_token = access_token_generate(user.id(), user.email().to_owned(), auth.config())?;
 
-    Ok((access_token, user.id(), user.email().to_owned()))
+    Ok((
+        access_token,
+        next_refresh_token,
+        user.id(),
+        user.email().to_owned(),
+    ))
 }
 
 #[cfg(test)]

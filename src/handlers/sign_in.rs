@@ -2,8 +2,11 @@
 
 use crate::{
     Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, EmailSender, UserResponse,
-    email::email_validate_normalize, error::AuthError, password::password_verify,
-    tokens::token_cookies_generate,
+    cookies::{access_token_cookie_create, refresh_token_cookie_create},
+    email::email_validate_normalize,
+    error::AuthError,
+    password::password_verify,
+    tokens::{access_token_generate, token_expiry_calculate, token_with_hash_generate},
 };
 use axum::{
     Json, Router,
@@ -66,17 +69,31 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         return Err(AuthError::EmailNotConfirmed);
     }
 
-    // Update last_sign_in_at
-    auth.backend()
-        .user_last_sign_in_update(user.id())
+    let access_token = access_token_generate(user.id(), user.email().to_owned(), config)?;
+    let (refresh_token, refresh_token_hash) = token_with_hash_generate();
+    let refresh_token_expiry = token_expiry_calculate(config.refresh_token_expiry);
+
+    let sign_in_applied = auth
+        .backend()
+        .refresh_token_rotate_if_password_hash_atomic(
+            user.id(),
+            user.password_hash(),
+            &refresh_token_hash,
+            refresh_token_expiry,
+        )
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?;
 
-    // Call the on_sign_in hook
+    if !sign_in_applied {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    // Call the on_sign_in hook only after session issuance succeeds.
     auth.hooks().on_sign_in(&user).await;
 
-    // Generate tokens and cookies
-    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
+    let jar = axum_extra::extract::cookie::CookieJar::new()
+        .add(access_token_cookie_create(access_token, config))
+        .add(refresh_token_cookie_create(refresh_token, config));
 
     // Build response with user information
     let user_response = UserResponse {

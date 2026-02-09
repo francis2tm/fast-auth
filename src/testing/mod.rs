@@ -190,6 +190,7 @@ impl<C: TestContext> Suite<C> {
         protected_route::protected_route_refreshes_expired_access_token::<C>().await;
         protected_route::protected_route_rejects_expired_refresh_token::<C>().await;
         protected_route::protected_route_rejects_revoked_refresh_token::<C>().await;
+        protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -300,6 +301,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn protected_route_rejects_revoked_refresh_token() {
             $crate::testing::protected_route::protected_route_rejects_revoked_refresh_token::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_rotates_refresh_token_and_rejects_replay() {
+            $crate::testing::protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<$context>().await;
         }
 
         #[tokio::test]

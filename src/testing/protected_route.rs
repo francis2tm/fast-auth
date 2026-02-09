@@ -213,3 +213,69 @@ pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
         "revoked refresh should not emit cookies"
     );
 }
+
+/// Silent refresh should rotate refresh token and reject replay of the old token.
+pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+    let old_refresh_token = user.refresh_token.clone();
+
+    let response = client
+        .get(format!("{}{}", base_url, ME_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, old_refresh_token
+            ),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let set_cookies: Vec<_> = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .collect();
+    let new_refresh_token = set_cookies
+        .iter()
+        .find_map(|value| {
+            Cookie::parse(value.to_str().ok()?.to_string())
+                .ok()
+                .filter(|cookie| cookie.name() == auth_config.cookie_refresh_token_name)
+                .map(|cookie| cookie.value().to_string())
+        })
+        .expect("expected rotated refresh token cookie");
+    assert_ne!(new_refresh_token, old_refresh_token);
+
+    let replay = client
+        .get(format!("{}{}", base_url, ME_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, old_refresh_token
+            ),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+
+    let with_new = client
+        .get(format!("{}{}", base_url, ME_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, new_refresh_token
+            ),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(with_new.status(), StatusCode::OK);
+}

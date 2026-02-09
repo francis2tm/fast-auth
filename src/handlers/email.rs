@@ -125,19 +125,16 @@ pub async fn email_confirm_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSe
     // Hash the token for lookup
     let hash = token_hash_sha256(&req.token);
 
-    // Consume the token
-    let user_id = auth
+    // Atomically consume token and confirm email.
+    let applied = auth
         .backend()
-        .verification_token_consume_atomic(&hash, VerificationTokenType::EmailConfirm)
-        .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
-        .ok_or(AuthError::InvalidToken)?;
-
-    // Mark email as confirmed
-    auth.backend()
-        .user_email_confirm(user_id)
+        .email_confirm_apply_atomic(&hash)
         .await
         .map_err(|e| AuthError::Backend(e.to_string()))?;
+
+    if !applied {
+        return Err(AuthError::InvalidToken);
+    }
 
     Ok(Json(EmailConfirmResponse {
         message: "Email confirmed successfully.".to_string(),

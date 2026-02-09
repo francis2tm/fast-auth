@@ -1,7 +1,7 @@
-//! Backend trait abstraction for storage-agnostic authentication.
+//! Backend trait abstractions for storage-agnostic authentication.
 //!
-//! This module defines the core traits that allow `fast-auth` to work with
-//! any database or storage backend.
+//! This module defines the minimal contracts `fast-auth` needs from your user model
+//! and persistence layer.
 
 use chrono::{DateTime, Utc};
 use std::future::Future;
@@ -9,16 +9,16 @@ use uuid::Uuid;
 
 use crate::verification::VerificationTokenType;
 
-/// Minimal user interface required by fast-auth.
+/// Minimal user interface required by `fast-auth`.
 ///
-/// Implement this trait for your user type to use with [`AuthBackend`].
-/// This decouples the auth library from any specific user schema.
+/// Implement this trait for your user type so handlers and middleware can build
+/// auth responses without depending on a concrete schema.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use fast_auth::AuthUser;
 /// use chrono::{DateTime, Utc};
+/// use fast_auth::AuthUser;
 /// use uuid::Uuid;
 ///
 /// #[derive(Clone)]
@@ -26,115 +26,113 @@ use crate::verification::VerificationTokenType;
 ///     id: Uuid,
 ///     email: String,
 ///     password_hash: String,
-///     // ... your custom fields
+///     email_confirmed_at: Option<DateTime<Utc>>,
+///     last_sign_in_at: Option<DateTime<Utc>>,
+///     created_at: DateTime<Utc>,
 /// }
 ///
 /// impl AuthUser for MyUser {
 ///     fn id(&self) -> Uuid { self.id }
 ///     fn email(&self) -> &str { &self.email }
 ///     fn password_hash(&self) -> &str { &self.password_hash }
-///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { None }
-///     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { None }
-///     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
+///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { self.email_confirmed_at }
+///     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { self.last_sign_in_at }
+///     fn created_at(&self) -> DateTime<Utc> { self.created_at }
 /// }
 /// ```
 pub trait AuthUser: Send + Sync + Clone {
     /// Returns the user's unique identifier.
     fn id(&self) -> Uuid;
-
     /// Returns the user's email address.
     fn email(&self) -> &str;
-
-    /// Returns the user's hashed password.
+    /// Returns the stored password hash.
     fn password_hash(&self) -> &str;
-
-    /// Returns when the email was confirmed, if ever.
+    /// Returns the email confirmation timestamp, if confirmed.
     fn email_confirmed_at(&self) -> Option<DateTime<Utc>>;
-
-    /// Returns when the user last signed in, if ever.
+    /// Returns the latest sign-in timestamp, if available.
     fn last_sign_in_at(&self) -> Option<DateTime<Utc>>;
-
-    /// Returns when the user was created.
+    /// Returns the account creation timestamp.
     fn created_at(&self) -> DateTime<Utc>;
 }
 
-/// Backend storage trait for authentication operations.
+/// Storage backend contract for authentication operations.
 ///
-/// Implement this trait to use any database or storage system with fast-auth.
-/// All operations should be atomic where applicable (e.g., user creation with
-/// duplicate check should use transactions).
-///
-/// # Type Parameters
-///
-/// * `User` - Your user type implementing [`AuthUser`]
-/// * `Error` - Your error type for storage operations
+/// All methods with `*_atomic` in the name must be implemented as single
+/// race-safe operations (typically one SQL statement or one transaction).
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use fast_auth::{AuthBackend, AuthUser};
 /// use chrono::{DateTime, Utc};
+/// use fast_auth::{AuthBackend, AuthUser};
 /// use uuid::Uuid;
 ///
 /// #[derive(Clone)]
-/// struct MyBackend { /* your pool/connection */ }
+/// struct MyBackend;
+/// #[derive(Clone)]
+/// struct MyUser;
+/// #[derive(Debug)]
+/// struct MyError;
+///
+/// impl std::fmt::Display for MyError {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "error") }
+/// }
+/// impl std::error::Error for MyError {}
+///
+/// impl AuthUser for MyUser {
+///     fn id(&self) -> Uuid { Uuid::nil() }
+///     fn email(&self) -> &str { "" }
+///     fn password_hash(&self) -> &str { "" }
+///     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { None }
+///     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { None }
+///     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
+/// }
 ///
 /// impl AuthBackend for MyBackend {
 ///     type User = MyUser;
 ///     type Error = MyError;
-///
-///     async fn user_find_by_email(&self, email: &str)
-///         -> Result<Option<Self::User>, Self::Error> {
-///         // Query your database
-///         Ok(None)
-///     }
-///     // ... implement other methods
+///     async fn user_find_by_email(&self, _: &str) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
+///     async fn user_get_by_id(&self, _: Uuid) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
+///     async fn user_create_atomic(&self, _: &str, _: &str) -> Result<Self::User, Self::Error> { Err(MyError) }
+///     async fn refresh_token_rotate_atomic(&self, _: Uuid, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn refresh_token_rotate_if_password_hash_atomic(&self, _: Uuid, _: &str, _: &str, _: DateTime<Utc>) -> Result<bool, Self::Error> { Ok(false) }
+///     async fn refresh_token_revoke_atomic(&self, _: &str) -> Result<bool, Self::Error> { Ok(false) }
+///     async fn refresh_token_exchange_atomic(&self, _: &str, _: &str, _: DateTime<Utc>) -> Result<Option<Uuid>, Self::Error> { Ok(None) }
+///     async fn verification_token_create(&self, _: Uuid, _: &str, _: fast_auth::verification::VerificationTokenType, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn email_confirm_apply_atomic(&self, _: &str) -> Result<bool, Self::Error> { Ok(false) }
+///     async fn password_reset_apply_atomic(&self, _: &str, _: &str) -> Result<bool, Self::Error> { Ok(false) }
 /// }
 /// ```
 pub trait AuthBackend: Clone + Send + Sync + 'static {
-    /// The user type stored in this backend.
+    /// User record type.
     type User: AuthUser;
-
-    /// Error type for storage operations.
+    /// Backend error type.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Find a user by email address.
-    ///
-    /// Returns `None` if no user exists with the given email.
+    /// Finds a user by normalized email.
     fn user_find_by_email(
         &self,
         email: &str,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Find a user by their unique ID.
-    ///
-    /// Returns `None` if no user exists with the given ID.
+    /// Finds a user by id.
     fn user_get_by_id(
         &self,
         id: Uuid,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Atomically create a new user with the given email and password hash.
+    /// Creates a new user and fails when email already exists.
     ///
-    /// This must check for existing users and create the new user within a single
-    /// transaction to prevent race conditions. Returns `Err` if a user with this
-    /// email already exists.
+    /// Must be race-safe for concurrent sign-ups with the same email.
     fn user_create_atomic(
         &self,
         email: &str,
         password_hash: &str,
     ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
 
-    /// Update the last sign-in timestamp for a user.
-    fn user_last_sign_in_update(
-        &self,
-        id: Uuid,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Atomically revoke all existing refresh tokens for a user and create a new one.
+    /// Revokes all active refresh tokens for `user_id` and inserts a new one.
     ///
-    /// This must be implemented atomically (e.g. in a database transaction) to prevent
-    /// race conditions where concurrent sign-ins could result in multiple valid sessions.
+    /// Must be atomic to preserve single-session refresh-token semantics.
     fn refresh_token_rotate_atomic(
         &self,
         user_id: Uuid,
@@ -142,32 +140,53 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Atomically revoke a specific refresh token by its hash.
+    /// Finalizes sign-in only if the password hash still matches the current one.
     ///
-    /// This must be implemented as a single atomic operation (e.g., `UPDATE ... WHERE revoked_at IS NULL`)
-    /// to prevent race conditions. Returns `true` if a token was revoked, `false` if not found or already revoked.
+    /// Required behavior:
+    /// - lock/verify current password hash against `current_password_hash`
+    /// - set `last_sign_in_at` for the user
+    /// - revoke all active refresh tokens for that user
+    /// - insert the new refresh token (`refresh_token_hash`, `expires_at`)
+    ///
+    /// Must be atomic.
+    ///
+    /// Returns `false` when user is missing or password changed concurrently.
+    /// Returns `true` only when all steps above were committed.
+    fn refresh_token_rotate_if_password_hash_atomic(
+        &self,
+        user_id: Uuid,
+        current_password_hash: &str,
+        refresh_token_hash: &str,
+        expires_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+
+    /// Revokes a refresh token by hash.
+    ///
+    /// Must be atomic. Returns `true` when a live token was revoked.
     fn refresh_token_revoke_atomic(
         &self,
         refresh_token_hash: &str,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    /// Atomically revoke all active refresh tokens for a user.
-    fn refresh_tokens_revoke_all_atomic(
-        &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Validate a refresh token and return the associated user ID.
+    /// Consumes a valid refresh token and issues a replacement token atomically.
     ///
-    /// Returns `None` if the token is invalid, expired, or revoked.
-    fn refresh_token_validate(
+    /// Required behavior:
+    /// - consume/revoke `current_refresh_token_hash` only if active and not expired
+    /// - revoke any other active refresh tokens for the same user
+    /// - insert `next_refresh_token_hash` with `next_expires_at`
+    ///
+    /// Returns the owner user id when exchange succeeds.
+    /// Returns `None` when current token is invalid, expired, or already revoked.
+    fn refresh_token_exchange_atomic(
         &self,
-        refresh_token_hash: &str,
+        current_refresh_token_hash: &str,
+        next_refresh_token_hash: &str,
+        next_expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
 
-    // --- Verification Token Methods ---
-
-    /// Create a verification token (email confirm or password reset).
+    /// Creates a verification token and invalidates previous active token of same type.
+    ///
+    /// Must atomically invalidate existing active `(user_id, token_type)` token before insert.
     fn verification_token_create(
         &self,
         user_id: Uuid,
@@ -176,29 +195,29 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         expires_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Atomically consume a verification token.
+    /// Atomically confirms email by consuming the given token hash.
     ///
-    /// This must be implemented as a single atomic operation (e.g., `UPDATE ... WHERE used_at IS NULL RETURNING user_id`)
-    /// to prevent race conditions. Returns the user_id if the token is valid and not expired/used.
-    /// Marks the token as used upon successful validation.
-    fn verification_token_consume_atomic(
+    /// Required behavior:
+    /// - consume `token_hash` only when type is `EmailConfirm`, unexpired, and unused
+    /// - set `email_confirmed_at`
+    ///
+    /// Returns `false` when token is invalid, expired, or already used.
+    fn email_confirm_apply_atomic(
         &self,
         token_hash: &str,
-        token_type: crate::verification::VerificationTokenType,
-    ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 
-    // --- User Update Methods ---
-
-    /// Mark user's email as confirmed (sets email_confirmed_at).
-    fn user_email_confirm(
+    /// Atomically applies password reset by consuming token hash and updating credentials.
+    ///
+    /// Required behavior:
+    /// - consume `token_hash` only when type is `PasswordReset`, unexpired, and unused
+    /// - update password hash
+    /// - revoke all active refresh tokens for the user
+    ///
+    /// Returns `false` when token is invalid, expired, or already used.
+    fn password_reset_apply_atomic(
         &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    /// Update user's password hash.
-    fn user_password_update(
-        &self,
-        user_id: Uuid,
+        token_hash: &str,
         password_hash: &str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
