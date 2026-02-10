@@ -4,6 +4,7 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 
 ## Features
 
+- Frontend Ready: ready to use SDKs in `fast-auth/sdk/*`
 - Backend-agnostic `AuthBackend`
 - Error-first backend contract with `thiserror`
 - JWT access tokens with configurable expiry
@@ -206,3 +207,16 @@ impl TestContext for TestApp {
 
 fast_auth::test_suite!(TestApp);
 ```
+
+## OpenAPI
+
+Generate `fast-auth/docs/openapi.yml`:
+
+```bash
+cargo run -p fast-auth --bin openapi
+```
+
+## React SDK
+
+The React SDK lives at `fast-auth/sdk/react` and is generated from
+`fast-auth/docs/openapi.yml` using `@hey-api/openapi-ts`.

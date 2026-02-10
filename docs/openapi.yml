@@ -1,0 +1,461 @@
+openapi: 3.1.0
+info:
+  title: fast-auth
+  description: A simple, extensible authentication library for Axum with JWT and refresh tokens
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  version: 0.1.0
+paths:
+  /auth/email/confirm:
+    get:
+      tags:
+      - auth
+      summary: Confirm email from a browser verification link (`GET /auth/email/confirm?token=...`).
+      operationId: email_confirm_get
+      parameters:
+      - name: token
+        in: query
+        description: Verification token from email link.
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailConfirmResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/email/confirm/send:
+    post:
+      tags:
+      - auth
+      summary: Send a confirmation email to the user.
+      description: |-
+        Creates a verification token and sends an email with the confirmation link.
+        Always returns success to prevent email enumeration attacks.
+      operationId: email_confirm_send
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailConfirmSendRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailConfirmSendResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/me:
+    get:
+      tags:
+      - auth
+      summary: Get current authenticated user.
+      description: |-
+        Returns the current user's information from the JWT token.
+        Queries the database to get fresh user data including email_confirmed_at and created_at.
+
+        # Requires
+        - Valid JWT access token (httpOnly cookie)
+        - `auth::middleware::base` middleware applied to route
+      operationId: me_get
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/password/forgot:
+    post:
+      tags:
+      - auth
+      summary: Request a password reset email.
+      description: |-
+        Creates a reset token and sends an email with the reset link.
+        Always returns success to prevent email enumeration attacks.
+      operationId: password_forgot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordForgotRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordForgotResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/password/reset:
+    post:
+      tags:
+      - auth
+      summary: Reset password using the token from the email.
+      operationId: password_reset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordResetResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/sign-in:
+    post:
+      tags:
+      - auth
+      summary: Sign in an existing user.
+      description: |-
+        Authenticates user with email and password.
+        Sets access and refresh tokens as httpOnly cookies.
+        Returns `EmailNotConfirmed` when `require_email_confirmation` is enabled and the user has not
+        confirmed their email.
+        Calls the `on_sign_in` hook after successful authentication.
+      operationId: sign_in
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthCookieResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '403':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/sign-out:
+    post:
+      tags:
+      - auth
+      summary: Sign out user by revoking refresh token.
+      description: |-
+        Revokes the refresh token from database and clears both access and refresh cookies.
+        The server automatically sends Set-Cookie headers to clear the cookies from the browser.
+
+        **Note**: Due to the stateless nature of JWT tokens, if the access token was copied before
+        sign-out, it will remain valid until it expires (typically 15 minutes). This is standard
+        behavior for JWT-based authentication systems.
+      operationId: sign_out
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignOutResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+  /auth/sign-up:
+    post:
+      tags:
+      - auth
+      summary: Sign up a new user.
+      description: |-
+        Creates a new user account with email and password.
+        Sets access and refresh tokens as httpOnly cookies unless email confirmation is required.
+        Calls the `on_sign_up` hook after successful user creation.
+      operationId: sign_up
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthCookieResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '409':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+components:
+  schemas:
+    AuthCookieResponse:
+      type: object
+      description: Auth response body. Tokens are set as httpOnly cookies.
+      required:
+      - user
+      properties:
+        user:
+          $ref: '#/components/schemas/UserResponse'
+    AuthErrorResponse:
+      type: object
+      description: Standard error response body returned by auth endpoints.
+      required:
+      - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message.
+    EmailConfirmQuery:
+      type: object
+      description: Query for browser-based email confirmation links.
+      required:
+      - token
+      properties:
+        token:
+          type: string
+          description: Verification token from email link.
+    EmailConfirmResponse:
+      type: object
+      description: Response for confirming email.
+      required:
+      - message
+      properties:
+        message:
+          type: string
+          description: Success message.
+    EmailConfirmSendRequest:
+      type: object
+      description: Request body for sending confirmation email.
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          description: User's email address.
+    EmailConfirmSendResponse:
+      type: object
+      description: Response for sending confirmation email.
+      required:
+      - message
+      properties:
+        message:
+          type: string
+          description: Success message.
+    PasswordForgotRequest:
+      type: object
+      description: Request body for forgot password.
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          description: User's email address.
+    PasswordForgotResponse:
+      type: object
+      description: Response for forgot password.
+      required:
+      - message
+      properties:
+        message:
+          type: string
+          description: Success message.
+    PasswordResetRequest:
+      type: object
+      description: Request body for password reset.
+      required:
+      - token
+      - password
+      properties:
+        password:
+          type: string
+          description: New password.
+        token:
+          type: string
+          description: Reset token from email link.
+    PasswordResetResponse:
+      type: object
+      description: Response for password reset.
+      required:
+      - message
+      properties:
+        message:
+          type: string
+          description: Success message.
+    SignInRequest:
+      type: object
+      description: Request body for sign-in.
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          description: User email address.
+        password:
+          type: string
+          description: User password.
+    SignOutResponse:
+      type: object
+      description: Response for sign-out.
+      required:
+      - success
+      - message
+      properties:
+        message:
+          type: string
+          description: Message instructing client to clear tokens.
+        success:
+          type: boolean
+          description: Sign-out success status.
+    SignUpRequest:
+      type: object
+      description: Request body for sign-up.
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          description: User email address.
+        password:
+          type: string
+          description: User password (min 8 characters, must contain letter and number).
+    UserResponse:
+      type: object
+      description: User data returned in auth responses.
+      required:
+      - id
+      - email
+      - created_at
+      properties:
+        created_at:
+          type: string
+        email:
+          type: string
+        email_confirmed_at:
+          type:
+          - string
+          - 'null'
+        id:
+          type: string
+tags:
+- name: auth
+  description: Authentication management

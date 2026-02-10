@@ -15,8 +15,20 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
+use utoipa::{OpenApi, ToSchema};
 
 pub const SIGN_IN_PATH: &str = "/auth/sign-in";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(sign_in),
+    components(schemas(
+        SignInRequest,
+        crate::AuthCookieResponse,
+        crate::error::AuthErrorResponse
+    ))
+)]
+pub(crate) struct SignInApi;
 
 /// Returns routes for the /auth/sign-in endpoint.
 pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
@@ -25,7 +37,7 @@ pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
 }
 
 /// Request body for sign-in.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SignInRequest {
     /// User email address.
     pub email: String,
@@ -40,6 +52,18 @@ pub struct SignInRequest {
 /// Returns `EmailNotConfirmed` when `require_email_confirmation` is enabled and the user has not
 /// confirmed their email.
 /// Calls the `on_sign_in` hook after successful authentication.
+#[utoipa::path(
+    post,
+    path = "",
+    request_body = SignInRequest,
+    responses(
+        (status = OK, body = crate::AuthCookieResponse),
+        (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
+        (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
+        (status = FORBIDDEN, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignInRequest>,

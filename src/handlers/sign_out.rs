@@ -14,8 +14,16 @@ use axum::{
 };
 use axum_extra::extract::cookie::CookieJar;
 use serde::{Deserialize, Serialize};
+use utoipa::{OpenApi, ToSchema};
 
 pub const SIGN_OUT_PATH: &str = "/auth/sign-out";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(sign_out),
+    components(schemas(SignOutResponse, crate::error::AuthErrorResponse))
+)]
+pub(crate) struct SignOutApi;
 
 /// Returns routes for the /auth/sign-out endpoint.
 pub fn sign_out_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
@@ -24,7 +32,7 @@ pub fn sign_out_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
 }
 
 /// Response for sign-out.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SignOutResponse {
     /// Sign-out success status.
     pub success: bool,
@@ -40,6 +48,15 @@ pub struct SignOutResponse {
 /// **Note**: Due to the stateless nature of JWT tokens, if the access token was copied before
 /// sign-out, it will remain valid until it expires (typically 15 minutes). This is standard
 /// behavior for JWT-based authentication systems.
+#[utoipa::path(
+    post,
+    path = "",
+    responses(
+        (status = OK, body = SignOutResponse),
+        (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn sign_out<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     jar: CookieJar,

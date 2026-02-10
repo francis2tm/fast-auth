@@ -5,8 +5,16 @@ use crate::{
     error::AuthError,
 };
 use axum::{Json, Router, extract::State, routing::get};
+use utoipa::OpenApi;
 
 pub const ME_PATH: &str = "/auth/me";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(me_get),
+    components(schemas(crate::UserResponse, crate::error::AuthErrorResponse))
+)]
+pub(crate) struct MeApi;
 
 /// Returns routes for the /auth/me endpoint.
 pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>() -> Router<Auth<B, H, E>> {
@@ -21,6 +29,16 @@ pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>() -> Rou
 /// # Requires
 /// - Valid JWT access token (httpOnly cookie)
 /// - `auth::middleware::base` middleware applied to route
+#[utoipa::path(
+    get,
+    path = "",
+    responses(
+        (status = OK, body = crate::UserResponse),
+        (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
+        (status = NOT_FOUND, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn me_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,

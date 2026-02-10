@@ -32,6 +32,7 @@ mod error;
 mod extractors;
 pub mod handlers;
 pub mod middleware;
+pub mod openapi;
 mod password;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -50,9 +51,10 @@ pub use handlers::sign_up::SignUpRequest;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
+use utoipa::ToSchema;
 
 /// User data returned in auth responses.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserResponse {
     pub id: String,
     pub email: String,
@@ -61,7 +63,7 @@ pub struct UserResponse {
 }
 
 /// Auth response body. Tokens are set as httpOnly cookies.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AuthCookieResponse {
     pub user: UserResponse,
 }

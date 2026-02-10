@@ -1,0 +1,26 @@
+{
+  "name": "@internal/fast-auth-react",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "spec": "cargo run --manifest-path ../../Cargo.toml --bin openapi",
+    "generate": "pnpm run spec && openapi-ts",
+    "build": "pnpm run generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "^0.86.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.8.0"
+  }
+}
