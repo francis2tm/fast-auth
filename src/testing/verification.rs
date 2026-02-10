@@ -30,7 +30,7 @@ pub async fn email_confirm_marks_user_confirmed<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_create(
+        .verification_token_issue(
             stored_user.id(),
             &token_hash,
             VerificationTokenType::EmailConfirm,
@@ -79,7 +79,7 @@ pub async fn email_confirm_supports_get_link_flow<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_create(
+        .verification_token_issue(
             stored_user.id(),
             &token_hash,
             VerificationTokenType::EmailConfirm,
@@ -128,7 +128,7 @@ pub async fn password_reset_updates_password_and_revokes_sessions<C: TestContext
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_create(
+        .verification_token_issue(
             stored_user.id(),
             &token_hash,
             VerificationTokenType::PasswordReset,
@@ -522,7 +522,7 @@ pub async fn protected_route_rejects_unconfirmed_user_when_confirmation_required
     let refresh_token_hash = token_hash_sha256(&refresh_token);
     let expires_at = Utc::now() + ChronoDuration::days(7);
     ctx.backend()
-        .refresh_token_rotate_atomic(user.id(), &refresh_token_hash, expires_at)
+        .session_issue(user.id(), &refresh_token_hash, expires_at)
         .await
         .expect("create refresh token");
 
@@ -569,7 +569,7 @@ async fn verification_token_seed<C: TestContext>(
     let token = token_generate();
     let token_hash = token_hash_sha256(&token);
     ctx.backend()
-        .verification_token_create(user_id, &token_hash, token_type, expires_at)
+        .verification_token_issue(user_id, &token_hash, token_type, expires_at)
         .await
         .expect("create verification token");
     token

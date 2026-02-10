@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use std::future::Future;
 use uuid::Uuid;
 
+use crate::error::AuthError;
 use crate::verification::VerificationTokenType;
 
 /// Minimal user interface required by `fast-auth`.
@@ -55,10 +56,21 @@ pub trait AuthUser: Send + Sync + Clone {
     fn created_at(&self) -> DateTime<Utc>;
 }
 
+/// Backend error contract for `fast-auth`.
+///
+/// Implement this for your backend error type so handlers can make consistent
+/// decisions without parsing error messages.
+pub trait AuthBackendError: std::error::Error + Send + Sync + 'static {
+    /// Maps this backend error to the public auth error type.
+    fn auth_error(&self) -> AuthError {
+        AuthError::Backend(self.to_string())
+    }
+}
+
 /// Storage backend contract for authentication operations.
 ///
-/// All methods with `*_atomic` in the name must be implemented as single
-/// race-safe operations (typically one SQL statement or one transaction).
+/// Session and token mutation methods must be implemented as single race-safe
+/// operations (typically one SQL statement or one transaction).
 ///
 /// # Example
 ///
@@ -78,6 +90,7 @@ pub trait AuthUser: Send + Sync + Clone {
 ///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "error") }
 /// }
 /// impl std::error::Error for MyError {}
+/// impl fast_auth::AuthBackendError for MyError {}
 ///
 /// impl AuthUser for MyUser {
 ///     fn id(&self) -> Uuid { Uuid::nil() }
@@ -93,21 +106,21 @@ pub trait AuthUser: Send + Sync + Clone {
 ///     type Error = MyError;
 ///     async fn user_find_by_email(&self, _: &str) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
 ///     async fn user_get_by_id(&self, _: Uuid) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
-///     async fn user_create_atomic(&self, _: &str, _: &str) -> Result<Self::User, Self::Error> { Err(MyError) }
-///     async fn refresh_token_rotate_atomic(&self, _: Uuid, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
-///     async fn refresh_token_rotate_if_password_hash_atomic(&self, _: Uuid, _: &str, _: &str, _: DateTime<Utc>) -> Result<bool, Self::Error> { Ok(false) }
-///     async fn refresh_token_revoke_atomic(&self, _: &str) -> Result<bool, Self::Error> { Ok(false) }
-///     async fn refresh_token_exchange_atomic(&self, _: &str, _: &str, _: DateTime<Utc>) -> Result<Option<Uuid>, Self::Error> { Ok(None) }
-///     async fn verification_token_create(&self, _: Uuid, _: &str, _: fast_auth::verification::VerificationTokenType, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
-///     async fn email_confirm_apply_atomic(&self, _: &str) -> Result<bool, Self::Error> { Ok(false) }
-///     async fn password_reset_apply_atomic(&self, _: &str, _: &str) -> Result<bool, Self::Error> { Ok(false) }
+///     async fn user_create(&self, _: &str, _: &str) -> Result<Self::User, Self::Error> { Err(MyError) }
+///     async fn session_issue(&self, _: Uuid, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn session_issue_if_password_hash(&self, _: Uuid, _: &str, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn session_revoke_by_refresh_token_hash(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
+///     async fn session_exchange(&self, _: &str, _: &str, _: DateTime<Utc>) -> Result<Uuid, Self::Error> { Ok(Uuid::nil()) }
+///     async fn verification_token_issue(&self, _: Uuid, _: &str, _: fast_auth::verification::VerificationTokenType, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn email_confirm_apply(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
+///     async fn password_reset_apply(&self, _: &str, _: &str) -> Result<(), Self::Error> { Ok(()) }
 /// }
 /// ```
 pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// User record type.
     type User: AuthUser;
     /// Backend error type.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: AuthBackendError;
 
     /// Finds a user by normalized email.
     fn user_find_by_email(
@@ -121,10 +134,11 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         id: Uuid,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Creates a new user and fails when email already exists.
+    /// Creates a new user.
     ///
     /// Must be race-safe for concurrent sign-ups with the same email.
-    fn user_create_atomic(
+    /// Return [`AuthError::UserAlreadyExists`] when email already exists.
+    fn user_create(
         &self,
         email: &str,
         password_hash: &str,
@@ -133,7 +147,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// Revokes all active refresh tokens for `user_id` and inserts a new one.
     ///
     /// Must be atomic to preserve single-session refresh-token semantics.
-    fn refresh_token_rotate_atomic(
+    fn session_issue(
         &self,
         user_id: Uuid,
         refresh_token_hash: &str,
@@ -150,23 +164,25 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     ///
     /// Must be atomic.
     ///
-    /// Returns `false` when user is missing or password changed concurrently.
-    /// Returns `true` only when all steps above were committed.
-    fn refresh_token_rotate_if_password_hash_atomic(
+    /// Return [`AuthError::InvalidCredentials`] when user is missing or
+    /// password changed concurrently.
+    fn session_issue_if_password_hash(
         &self,
         user_id: Uuid,
         current_password_hash: &str,
         refresh_token_hash: &str,
         expires_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Revokes a refresh token by hash.
     ///
-    /// Must be atomic. Returns `true` when a live token was revoked.
-    fn refresh_token_revoke_atomic(
+    /// Must be atomic.
+    /// Return [`AuthError::RefreshTokenInvalid`] when token is missing or
+    /// already revoked.
+    fn session_revoke_by_refresh_token_hash(
         &self,
         refresh_token_hash: &str,
-    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Consumes a valid refresh token and issues a replacement token atomically.
     ///
@@ -175,19 +191,20 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// - revoke any other active refresh tokens for the same user
     /// - insert `next_refresh_token_hash` with `next_expires_at`
     ///
-    /// Returns the owner user id when exchange succeeds.
-    /// Returns `None` when current token is invalid, expired, or already revoked.
-    fn refresh_token_exchange_atomic(
+    /// Returns the owner user id when successful.
+    /// Returns [`AuthError::RefreshTokenInvalid`] when token is invalid,
+    /// expired, or revoked.
+    fn session_exchange(
         &self,
         current_refresh_token_hash: &str,
         next_refresh_token_hash: &str,
         next_expires_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Option<Uuid>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Uuid, Self::Error>> + Send;
 
     /// Creates a verification token and invalidates previous active token of same type.
     ///
     /// Must atomically invalidate existing active `(user_id, token_type)` token before insert.
-    fn verification_token_create(
+    fn verification_token_issue(
         &self,
         user_id: Uuid,
         token_hash: &str,
@@ -201,11 +218,12 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// - consume `token_hash` only when type is `EmailConfirm`, unexpired, and unused
     /// - set `email_confirmed_at`
     ///
-    /// Returns `false` when token is invalid, expired, or already used.
-    fn email_confirm_apply_atomic(
+    /// Returns [`AuthError::InvalidToken`] when token is invalid, expired, or
+    /// already used.
+    fn email_confirm_apply(
         &self,
         token_hash: &str,
-    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Atomically applies password reset by consuming token hash and updating credentials.
     ///
@@ -214,10 +232,11 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// - update password hash
     /// - revoke all active refresh tokens for the user
     ///
-    /// Returns `false` when token is invalid, expired, or already used.
-    fn password_reset_apply_atomic(
+    /// Returns [`AuthError::InvalidToken`] when token is invalid, expired, or
+    /// already used.
+    fn password_reset_apply(
         &self,
         token_hash: &str,
         password_hash: &str,
-    ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }

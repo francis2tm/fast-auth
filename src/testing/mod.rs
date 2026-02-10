@@ -155,6 +155,15 @@ pub trait TestContext: Sized + Send + Sync {
 
     /// Manually expire a refresh token by its hash (for testing expiration).
     fn refresh_token_expire(&self, refresh_token_hash: &str) -> impl Future<Output = ()> + Send;
+
+    /// Update a user's password hash directly in storage.
+    ///
+    /// Used by race/concurrency tests to simulate stale sign-in state.
+    fn user_password_hash_set(
+        &self,
+        user_id: Uuid,
+        password_hash: &str,
+    ) -> impl Future<Output = ()> + Send;
 }
 
 /// Test suite for fast-auth.
@@ -172,12 +181,14 @@ impl<C: TestContext> Suite<C> {
         sign_up::sign_up_rejects_duplicate_email::<C>().await;
         sign_up::sign_up_rejects_invalid_email::<C>().await;
         sign_up::sign_up_enforces_password_complexity_rules::<C>().await;
+        sign_up::sign_up_handles_concurrent_duplicate_requests::<C>().await;
 
         // Sign-in tests
         sign_in::sign_in_returns_tokens_for_valid_credentials::<C>().await;
         sign_in::sign_in_rejects_invalid_passwords::<C>().await;
         sign_in::sign_in_revokes_existing_refresh_tokens::<C>().await;
         sign_in::sign_in_expired_refresh_token_requires_sign_in::<C>().await;
+        sign_in::session_issue_rejects_stale_password_hash::<C>().await;
 
         // Sign-out tests
         sign_out::sign_out_revokes_refresh_token_and_clears_cookies::<C>().await;
@@ -191,6 +202,8 @@ impl<C: TestContext> Suite<C> {
         protected_route::protected_route_rejects_expired_refresh_token::<C>().await;
         protected_route::protected_route_rejects_revoked_refresh_token::<C>().await;
         protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<C>().await;
+        protected_route::protected_route_refresh_replay_race_has_single_winner::<C>().await;
+        protected_route::session_exchange_race_has_single_winner::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -244,6 +257,11 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn sign_up_handles_concurrent_duplicate_requests() {
+            $crate::testing::sign_up::sign_up_handles_concurrent_duplicate_requests::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn sign_in_returns_tokens_for_valid_credentials() {
             $crate::testing::sign_in::sign_in_returns_tokens_for_valid_credentials::<$context>().await;
         }
@@ -261,6 +279,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn sign_in_expired_refresh_token_requires_sign_in() {
             $crate::testing::sign_in::sign_in_expired_refresh_token_requires_sign_in::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn session_issue_rejects_stale_password_hash() {
+            $crate::testing::sign_in::session_issue_rejects_stale_password_hash::<$context>().await;
         }
 
         #[tokio::test]
@@ -306,6 +329,16 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn protected_route_rotates_refresh_token_and_rejects_replay() {
             $crate::testing::protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn protected_route_refresh_replay_race_has_single_winner() {
+            $crate::testing::protected_route::protected_route_refresh_replay_race_has_single_winner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn session_exchange_race_has_single_winner() {
+            $crate::testing::protected_route::session_exchange_race_has_single_winner::<$context>().await;
         }
 
         #[tokio::test]

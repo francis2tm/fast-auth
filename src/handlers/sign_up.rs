@@ -55,19 +55,9 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     // Create user via backend
     let user = auth
         .backend()
-        .user_create_atomic(&email, &hashed_password)
+        .user_create(&email, &hashed_password)
         .await
-        .map_err(|e| {
-            // Check if it's a "user already exists" error
-            let msg = e.to_string();
-            if msg.to_lowercase().contains("already exists")
-                || msg.to_lowercase().contains("duplicate")
-            {
-                AuthError::UserAlreadyExists
-            } else {
-                AuthError::Backend(msg)
-            }
-        })?;
+        .map_err(AuthError::from_backend)?;
 
     // Call the on_sign_up hook
     auth.hooks().on_sign_up(&user).await;

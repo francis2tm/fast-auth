@@ -137,9 +137,9 @@ pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks<B::User>, E: Em
 
     // Atomically revoke old tokens and create new one
     auth.backend()
-        .refresh_token_rotate_atomic(user_id, &refresh_token_hash, refresh_token_expiry)
+        .session_issue(user_id, &refresh_token_hash, refresh_token_expiry)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
+        .map_err(AuthError::from_backend)?;
 
     let jar = CookieJar::new()
         .add(access_token_cookie_create(access_token, auth.config()))

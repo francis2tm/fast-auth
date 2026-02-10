@@ -10,7 +10,6 @@ use crate::{
 use axum::{
     Json, Router,
     extract::{Query, State},
-    response::IntoResponse,
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -61,7 +60,7 @@ pub struct EmailConfirmResponse {
 pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<EmailConfirmSendRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<Json<EmailConfirmSendResponse>, AuthError> {
     let config = auth.config();
 
     // Normalize email
@@ -72,7 +71,7 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
         .backend()
         .user_find_by_email(&email)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
+        .map_err(AuthError::from_backend)?;
 
     // Only send if user exists and email not already confirmed
     if let Some(user) = user {
@@ -83,14 +82,14 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
 
             // Store token
             auth.backend()
-                .verification_token_create(
+                .verification_token_issue(
                     user.id(),
                     &hash,
                     VerificationTokenType::EmailConfirm,
                     expires_at,
                 )
                 .await
-                .map_err(|e| AuthError::Backend(e.to_string()))?;
+                .map_err(AuthError::from_backend)?;
 
             // Build verification link
             let verify_link = verification_link_build(config, EMAIL_CONFIRM_PATH, &token);
@@ -121,20 +120,15 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
 pub async fn email_confirm_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Query(req): Query<EmailConfirmQuery>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<Json<EmailConfirmResponse>, AuthError> {
     // Hash the token for lookup
     let hash = token_hash_sha256(&req.token);
 
     // Atomically consume token and confirm email.
-    let applied = auth
-        .backend()
-        .email_confirm_apply_atomic(&hash)
+    auth.backend()
+        .email_confirm_apply(&hash)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
-
-    if !applied {
-        return Err(AuthError::InvalidToken);
-    }
+        .map_err(AuthError::from_backend)?;
 
     Ok(Json(EmailConfirmResponse {
         message: "Email confirmed successfully.".to_string(),

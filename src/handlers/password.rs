@@ -8,7 +8,7 @@ use crate::{
     tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate},
     verification::{VerificationTokenType, verification_link_build},
 };
-use axum::{Json, Router, extract::State, response::IntoResponse, routing::post};
+use axum::{Json, Router, extract::State, routing::post};
 use serde::{Deserialize, Serialize};
 
 pub const PASSWORD_FORGOT_PATH: &str = "/auth/password/forgot";
@@ -70,7 +70,7 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
         .backend()
         .user_find_by_email(&email)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
+        .map_err(AuthError::from_backend)?;
 
     // Only send if user exists
     if let Some(user) = user {
@@ -80,14 +80,14 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
 
         // Store token
         auth.backend()
-            .verification_token_create(
+            .verification_token_issue(
                 user.id(),
                 &hash,
                 VerificationTokenType::PasswordReset,
                 expires_at,
             )
             .await
-            .map_err(|e| AuthError::Backend(e.to_string()))?;
+            .map_err(AuthError::from_backend)?;
 
         // Build reset link
         let reset_link = verification_link_build(config, PASSWORD_RESET_PATH, &token);
@@ -117,14 +117,13 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
 pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordResetRequest>,
-) -> Result<impl IntoResponse, AuthError> {
+) -> Result<Json<PasswordResetResponse>, AuthError> {
     password_reset_apply(&auth, &req.token, &req.password).await?;
 
     Ok(Json(PasswordResetResponse {
         message: "Password reset successfully. You can now sign in with your new password."
             .to_string(),
-    })
-    .into_response())
+    }))
 }
 
 /// Apply a password reset from a verification token.
@@ -149,15 +148,10 @@ async fn password_reset_apply<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSen
     // Hash the new password
     let hashed_password = password_hash(password)?;
 
-    let applied = auth
-        .backend()
-        .password_reset_apply_atomic(&hash, &hashed_password)
+    auth.backend()
+        .password_reset_apply(&hash, &hashed_password)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
-
-    if !applied {
-        return Err(AuthError::InvalidToken);
-    }
+        .map_err(AuthError::from_backend)?;
 
     Ok(())
 }

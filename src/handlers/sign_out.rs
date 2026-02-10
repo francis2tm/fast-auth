@@ -55,16 +55,10 @@ pub async fn sign_out<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     let refresh_token_hash = token_hash_sha256(&refresh_token);
 
     // Revoke refresh token via backend
-    let revoked = auth
-        .backend()
-        .refresh_token_revoke_atomic(&refresh_token_hash)
+    auth.backend()
+        .session_revoke_by_refresh_token_hash(&refresh_token_hash)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
-
-    if !revoked {
-        // Token not found or already revoked
-        return Err(AuthError::RefreshTokenInvalid);
-    }
+        .map_err(AuthError::from_backend)?;
 
     // Clear cookies by setting max-age=0
     let access_clear_cookie = access_token_cookie_clear(config);

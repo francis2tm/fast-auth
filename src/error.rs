@@ -6,6 +6,8 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 
+use crate::AuthBackendError;
+
 /// Authentication and authorization errors.
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -47,6 +49,13 @@ pub enum AuthError {
 
     #[error("backend error: {0}")]
     Backend(String),
+}
+
+impl AuthError {
+    /// Map a backend error into an auth error without string parsing.
+    pub(crate) fn from_backend<E: AuthBackendError>(error: E) -> Self {
+        error.auth_error()
+    }
 }
 
 impl IntoResponse for AuthError {

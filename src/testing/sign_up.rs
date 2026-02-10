@@ -151,3 +151,45 @@ pub async fn sign_up_enforces_password_complexity_rules<C: TestContext>() {
         "password checks must run before inserting the user",
     );
 }
+
+/// Concurrent duplicate sign-ups should produce exactly one success.
+pub async fn sign_up_handles_concurrent_duplicate_requests<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let email = format!("race-user+{}@example.com", Uuid::new_v4());
+    let password = "SecurePass123";
+
+    let request_a = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": email, "password": password }))
+        .send();
+    let request_b = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": email, "password": password }))
+        .send();
+
+    let (resp_a, resp_b) = tokio::join!(request_a, request_b);
+    let status_a = resp_a.expect("first sign-up request").status();
+    let status_b = resp_b.expect("second sign-up request").status();
+
+    let success_count = [status_a, status_b]
+        .into_iter()
+        .filter(|status| *status == StatusCode::OK)
+        .count();
+    let conflict_count = [status_a, status_b]
+        .into_iter()
+        .filter(|status| *status == StatusCode::CONFLICT)
+        .count();
+
+    assert_eq!(success_count, 1, "expected exactly one successful sign-up");
+    assert_eq!(
+        conflict_count, 1,
+        "expected exactly one duplicate-email conflict",
+    );
+
+    let stored = ctx
+        .backend()
+        .user_find_by_email(&email)
+        .await
+        .expect("db query");
+    assert!(stored.is_some(), "one user must be persisted");
+}

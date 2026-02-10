@@ -6,8 +6,12 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use reqwest::{StatusCode, header};
 use serde_json::Value;
 
+use crate::AuthBackendError;
+use crate::AuthError;
 use crate::handlers::ME_PATH;
-use crate::tokens::{AccessTokenClaims, token_hash_sha256};
+use crate::tokens::{
+    AccessTokenClaims, token_expiry_calculate, token_hash_sha256, token_with_hash_generate,
+};
 
 use super::{TestContext, TestUser};
 use crate::AuthBackend;
@@ -185,7 +189,7 @@ pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
 
     // Revoke the token via AuthBackend
     ctx.backend()
-        .refresh_token_revoke_atomic(&refresh_token_hash)
+        .session_revoke_by_refresh_token_hash(&refresh_token_hash)
         .await
         .expect("revoke token");
 
@@ -278,4 +282,98 @@ pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestCon
         .await
         .unwrap();
     assert_eq!(with_new.status(), StatusCode::OK);
+}
+
+/// Two concurrent refresh attempts with one token should have a single winner.
+pub async fn protected_route_refresh_replay_race_has_single_winner<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+
+    let request_a = client
+        .get(format!("{}{}", base_url, ME_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, user.refresh_token
+            ),
+        )
+        .send();
+    let request_b = client
+        .get(format!("{}{}", base_url, ME_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, user.refresh_token
+            ),
+        )
+        .send();
+
+    let (resp_a, resp_b) = tokio::join!(request_a, request_b);
+    let status_a = resp_a.expect("first refresh request").status();
+    let status_b = resp_b.expect("second refresh request").status();
+
+    let success_count = [status_a, status_b]
+        .into_iter()
+        .filter(|status| *status == StatusCode::OK)
+        .count();
+    let unauthorized_count = [status_a, status_b]
+        .into_iter()
+        .filter(|status| *status == StatusCode::UNAUTHORIZED)
+        .count();
+
+    assert_eq!(success_count, 1, "exactly one refresh should win");
+    assert_eq!(unauthorized_count, 1, "replay refresh must be rejected");
+
+    let old_hash = token_hash_sha256(&user.refresh_token);
+    let old_token = ctx
+        .refresh_token_get(&old_hash)
+        .await
+        .expect("old refresh token row");
+    assert!(
+        old_token.revoked_at.is_some(),
+        "old refresh token must be revoked after race",
+    );
+}
+
+/// Backend exchange contract should allow only one winner for same token hash.
+pub async fn session_exchange_race_has_single_winner<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+    let current_hash = token_hash_sha256(&user.refresh_token);
+
+    let (_, next_hash_a) = token_with_hash_generate();
+    let (_, next_hash_b) = token_with_hash_generate();
+    let next_expires_at = token_expiry_calculate(auth_config.refresh_token_expiry);
+
+    let exchange_a = async {
+        ctx.backend()
+            .session_exchange(&current_hash, &next_hash_a, next_expires_at)
+            .await
+    };
+    let exchange_b = async {
+        ctx.backend()
+            .session_exchange(&current_hash, &next_hash_b, next_expires_at)
+            .await
+    };
+
+    let (outcome_a, outcome_b) = tokio::join!(exchange_a, exchange_b);
+    let outcomes = [&outcome_a, &outcome_b];
+
+    let exchanged_count = outcomes.iter().filter(|outcome| outcome.is_ok()).count();
+    let invalid_count = outcomes
+        .iter()
+        .filter(|outcome| {
+            outcome
+                .as_ref()
+                .err()
+                .is_some_and(|error| matches!(error.auth_error(), AuthError::RefreshTokenInvalid))
+        })
+        .count();
+
+    assert_eq!(exchanged_count, 1, "exactly one exchange should succeed");
+    assert_eq!(invalid_count, 1, "replay exchange must be rejected");
 }

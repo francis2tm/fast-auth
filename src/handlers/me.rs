@@ -30,7 +30,7 @@ pub async fn me_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         .backend()
         .user_get_by_id(current_user.user_id)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
+        .map_err(AuthError::from_backend)?
         .ok_or(AuthError::UserNotFound)?;
 
     // Build response

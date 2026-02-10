@@ -1,26 +1,25 @@
 # fast-auth
 
-A simple, extensible authentication library for Axum with JWT and refresh tokens.
+A simple authentication library for Axum with JWT access tokens, rotating refresh tokens, and pluggable storage.
 
 ## Features
 
-- **Backend Agnostic** for any database and ORM
-- **JWT access tokens** with configurable expiry
-- **Refresh tokens** with automatic rotation and revocation
-- **HttpOnly cookies** for secure token storage
-- **Lifecycle hooks** for sign-up/sign-in events
-- **Axum middleware** for transparent token validation and refresh
-- **Integration test suite** for verifying backend implementation
+- Backend-agnostic `AuthBackend`
+- Error-first backend contract with `thiserror`
+- JWT access tokens with configurable expiry
+- Refresh token rotation and replay protection
+- HttpOnly cookie transport
+- Sign-up/sign-in hooks
+- Reusable auth conformance test suite
 
 ## Quick Start
 
-### 1. Implement the Backend Trait
+### 1. Implement `AuthUser`, backend error, and `AuthBackend`
 
-Create your database backend by implementing `AuthBackend`:
-
-```rust
-use fast_auth::{AuthBackend, AuthUser, AuthRefreshToken};
+```rust,ignore
 use chrono::{DateTime, Utc};
+use fast_auth::{AuthBackend, AuthBackendError, AuthError, AuthUser};
+use thiserror::Error;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -29,6 +28,7 @@ struct MyUser {
     email: String,
     password_hash: String,
     email_confirmed_at: Option<DateTime<Utc>>,
+    last_sign_in_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
 }
 
@@ -37,34 +37,99 @@ impl AuthUser for MyUser {
     fn email(&self) -> &str { &self.email }
     fn password_hash(&self) -> &str { &self.password_hash }
     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { self.email_confirmed_at }
+    fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { self.last_sign_in_at }
     fn created_at(&self) -> DateTime<Utc> { self.created_at }
 }
 
+#[derive(Debug, Error)]
+enum MyError {
+    #[error("user already exists")]
+    UserAlreadyExists,
+    #[error("invalid credentials")]
+    InvalidCredentials,
+    #[error("refresh token invalid")]
+    RefreshTokenInvalid,
+    #[error("verification token invalid")]
+    InvalidToken,
+    #[error("unexpected: {0}")]
+    Unexpected(String),
+}
+
+impl AuthBackendError for MyError {
+    fn auth_error(&self) -> AuthError {
+        match self {
+            MyError::UserAlreadyExists => AuthError::UserAlreadyExists,
+            MyError::InvalidCredentials => AuthError::InvalidCredentials,
+            MyError::RefreshTokenInvalid => AuthError::RefreshTokenInvalid,
+            MyError::InvalidToken => AuthError::InvalidToken,
+            MyError::Unexpected(message) => AuthError::Backend(message.clone()),
+        }
+    }
+}
+
 #[derive(Clone)]
-struct MyBackend { /* your db pool */ }
+struct MyBackend;
 
 impl AuthBackend for MyBackend {
     type User = MyUser;
-    type RefreshToken = MyRefreshToken;
     type Error = MyError;
 
-    async fn user_find_by_email(&self, email: &str) -> Result<Option<Self::User>, Self::Error> {
-        // Query your database...
+    async fn user_find_by_email(&self, _email: &str) -> Result<Option<Self::User>, Self::Error> {
+        Ok(None)
     }
 
-    // ... implement other methods
+    async fn user_get_by_id(&self, _id: Uuid) -> Result<Option<Self::User>, Self::Error> {
+        Ok(None)
+    }
+
+    async fn user_create(&self, _email: &str, _password_hash: &str) -> Result<Self::User, Self::Error> {
+        Err(MyError::UserAlreadyExists)
+    }
+
+    async fn session_issue(&self, _user_id: Uuid, _refresh_token_hash: &str, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn session_issue_if_password_hash(&self, _user_id: Uuid, _current_password_hash: &str, _refresh_token_hash: &str, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
+        Err(MyError::InvalidCredentials)
+    }
+
+    async fn session_revoke_by_refresh_token_hash(&self, _refresh_token_hash: &str) -> Result<(), Self::Error> {
+        Err(MyError::RefreshTokenInvalid)
+    }
+
+    async fn session_exchange(&self, _current_refresh_token_hash: &str, _next_refresh_token_hash: &str, _next_expires_at: DateTime<Utc>) -> Result<Uuid, Self::Error> {
+        Err(MyError::RefreshTokenInvalid)
+    }
+
+    async fn verification_token_issue(&self, _user_id: Uuid, _token_hash: &str, _token_type: fast_auth::verification::VerificationTokenType, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn email_confirm_apply(&self, _token_hash: &str) -> Result<(), Self::Error> {
+        Err(MyError::InvalidToken)
+    }
+
+    async fn password_reset_apply(&self, _token_hash: &str, _password_hash: &str) -> Result<(), Self::Error> {
+        Err(MyError::InvalidToken)
+    }
 }
 ```
 
-### 2. Create the Auth Instance
+### 2. Build auth and mount routes + middleware
 
-```rust
+```rust,ignore
+use axum::{extract::FromRef, middleware, Router};
 use fast_auth::{Auth, AuthConfig};
-use axum::{Router, extract::FromRef, middleware};
 
-let backend = MyBackend::new();
-let secret = std::env::var("AUTH_JWT_SECRET").expect("AUTH_JWT_SECRET found");
-let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend)?;
+let backend = MyBackend;
+let auth = Auth::new(
+    AuthConfig {
+        jwt_secret: "your-secret-key-at-least-32-characters-long".to_string(),
+        ..Default::default()
+    },
+    backend,
+)?;
 
 #[derive(Clone)]
 struct AppState {
@@ -72,124 +137,81 @@ struct AppState {
 }
 
 impl FromRef<AppState> for Auth<MyBackend> {
-    fn from_ref(s: &AppState) -> Self { s.auth.clone() }
+    fn from_ref(state: &AppState) -> Self {
+        state.auth.clone()
+    }
 }
 
-let state = AppState { auth: auth.clone() };
+let app_state = AppState { auth: auth.clone() };
 
 let app = Router::new()
     .merge(auth.routes::<AppState>())
     .layer(middleware::from_fn_with_state(
         auth.clone(),
-        fast_auth::middleware::base::<MyBackend, ()>,
+        fast_auth::middleware::base::<MyBackend, (), ()>,
     ))
-    .with_state(state);
+    .with_state(app_state);
 ```
 
 ## Endpoints
 
-| Method | Path                | Description                      |
-| ------ | ------------------- | -------------------------------- |
-| POST   | `/v1/auth/sign-up`  | Create new user                  |
-| POST   | `/v1/auth/sign-in`  | Authenticate user                |
-| POST   | `/v1/auth/sign-out` | Sign out (revokes tokens)        |
-| GET    | `/v1/auth/me`       | Get current user (requires auth) |
+| Method | Path |
+| ------ | ---- |
+| POST | `/auth/sign-up` |
+| POST | `/auth/sign-in` |
+| POST | `/auth/sign-out` |
+| GET | `/auth/me` |
+| POST | `/auth/email/confirm/send` |
+| GET | `/auth/email/confirm` |
+| POST | `/auth/password/forgot` |
+| POST | `/auth/password/reset` |
 
-## Configuration
+## Protected routes
 
-Set the following environment variable:
-
-```bash
-AUTH_JWT_SECRET=your-secret-key-at-least-32-characters-long
-```
-
-Or configure programmatically:
-
-```rust
-use fast_auth::AuthConfig;
-use std::time::Duration;
-
-let config = AuthConfig {
-    jwt_secret: "your-secret-key-at-least-32-characters-long".to_string(),
-    access_token_expiry: Duration::from_secs(15 * 60),  // 15 minutes
-    refresh_token_expiry: Duration::from_secs(7 * 24 * 60 * 60),  // 7 days
-    cookie_domain: Some("example.com".to_string()),
-    cookie_secure: true,
-    ..Default::default()
-};
-```
-
-## Hooks
-
-Use hooks to run custom logic after authentication events:
-
-```rust
-use fast_auth::{Auth, AuthHooks, AuthUser};
-
-#[derive(Clone)]
-struct MyHooks;
-
-impl<U: AuthUser> AuthHooks<U> for MyHooks {
-    fn on_sign_up(&self, user: &U) -> impl std::future::Future<Output = ()> + Send {
-        let user_id = user.id();
-        async move {
-            // Send welcome email, create Stripe customer, etc.
-            println!("New user signed up: {user_id}");
-        }
-    }
-}
-
-let auth = Auth::new(config, backend)?
-    .with_hooks(MyHooks);
-```
-
-## Protected Routes
-
-Use `AuthUserExtractor` to protect routes:
-
-```rust
-use fast_auth::AuthUserExtractor;
+```rust,ignore
 use axum::Json;
+use fast_auth::CurrentUser;
 
-async fn protected_route(auth: AuthUserExtractor) -> Json<String> {
-    Json(format!("Hello, {}!", auth.email))
+async fn protected_route(user: CurrentUser) -> Json<String> {
+    Json(format!("Hello, {}", user.email))
 }
 ```
 
 ## Testing
 
-`fast-auth` includes a comprehensive integration test suite that you can run against your own backend implementation.
-
-1. Enable the `testing` feature in `Cargo.toml`:
+Enable testing feature:
 
 ```toml
 [dev-dependencies]
 fast-auth = { version = "0.1", features = ["testing"] }
 ```
 
-2. Implement `fast_auth::testing::TestContext` for your test app:
+Implement `TestContext` and use macro:
 
-```rust
+```rust,ignore
 use fast_auth::testing::TestContext;
 
-struct TestApp { /* ... */ }
+struct TestApp;
 
 impl TestContext for TestApp {
     type User = MyUser;
 
-    // Helper to spawn a fresh test instance
-    async fn spawn() -> (String, reqwest::Client, Self) {
-        // ... return base_url, http_client, and app state
-    }
+    async fn spawn() -> (String, reqwest::Client, Self) { todo!() }
+    fn auth_config(&self) -> &fast_auth::AuthConfig { todo!() }
+    fn backend(&self) -> &impl fast_auth::AuthBackend { todo!() }
+    async fn refresh_token_get(&self, _hash: &str) -> Option<fast_auth::testing::RefreshTokenInfo> { todo!() }
+    async fn refresh_token_expire(&self, _hash: &str) {}
+    async fn user_password_hash_set(&self, _user_id: uuid::Uuid, _password_hash: &str) {}
 }
+
+fast_auth::test_suite!(TestApp);
 ```
 
-3. Use the `test_suite!` macro to generate tests:
+## Breaking changes
 
-```rust
-// tests/auth.rs
-use fast_auth::test_suite;
-
-// Generates individual #[tokio::test] functions
-test_suite!(TestApp);
-```
+- Backend now uses error-first semantics for expected auth states.
+- `user_create` returns `User` or `AuthError::UserAlreadyExists`.
+- `session_issue_if_password_hash` returns `()` or `AuthError::InvalidCredentials`.
+- `session_revoke_by_refresh_token_hash` returns `()` or `AuthError::RefreshTokenInvalid`.
+- `session_exchange` returns `Uuid` or `AuthError::RefreshTokenInvalid`.
+- `email_confirm_apply`/`password_reset_apply` return `()` or `AuthError::InvalidToken`.

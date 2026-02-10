@@ -54,7 +54,7 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         .backend()
         .user_find_by_email(&email)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
+        .map_err(AuthError::from_backend)?
         .ok_or(AuthError::InvalidCredentials)?;
 
     // Verify password (constant-time comparison)
@@ -73,20 +73,15 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     let (refresh_token, refresh_token_hash) = token_with_hash_generate();
     let refresh_token_expiry = token_expiry_calculate(config.refresh_token_expiry);
 
-    let sign_in_applied = auth
-        .backend()
-        .refresh_token_rotate_if_password_hash_atomic(
+    auth.backend()
+        .session_issue_if_password_hash(
             user.id(),
             user.password_hash(),
             &refresh_token_hash,
             refresh_token_expiry,
         )
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?;
-
-    if !sign_in_applied {
-        return Err(AuthError::InvalidCredentials);
-    }
+        .map_err(AuthError::from_backend)?;
 
     // Call the on_sign_in hook only after session issuance succeeds.
     auth.hooks().on_sign_in(&user).await;

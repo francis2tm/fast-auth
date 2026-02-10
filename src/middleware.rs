@@ -130,29 +130,30 @@ async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
     // Atomically consume the current refresh token and issue a replacement token.
     let user_id = auth
         .backend()
-        .refresh_token_exchange_atomic(
+        .session_exchange(
             &current_refresh_token_hash,
             &next_refresh_token_hash,
             next_refresh_token_expiry,
         )
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
-        .ok_or(AuthError::RefreshTokenInvalid)?;
+        .map_err(AuthError::from_backend)?;
 
     // Get user data
     let user = auth
         .backend()
         .user_get_by_id(user_id)
         .await
-        .map_err(|e| AuthError::Backend(e.to_string()))?
+        .map_err(AuthError::from_backend)?
         .ok_or(AuthError::UserNotFound)?;
 
     // Prevent silent refresh from authenticating users before email verification.
     if auth.config().require_email_confirmation && user.email_confirmed_at().is_none() {
-        auth.backend()
-            .refresh_token_revoke_atomic(&next_refresh_token_hash)
-            .await
-            .map_err(|e| AuthError::Backend(e.to_string()))?;
+        let _ = auth
+            .backend()
+            .session_revoke_by_refresh_token_hash(&next_refresh_token_hash)
+            .await;
+        // Intentionally ignore revoke errors because the token may already
+        // be revoked by concurrent requests.
         return Err(AuthError::EmailNotConfirmed);
     }
 

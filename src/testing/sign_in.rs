@@ -4,10 +4,14 @@ use axum_extra::extract::cookie::Cookie;
 use reqwest::{StatusCode, header};
 use serde_json::json;
 
+use crate::AuthBackendError;
 use crate::AuthCookieResponse;
+use crate::AuthError;
 use crate::AuthUser;
 use crate::handlers::{ME_PATH, SIGN_IN_PATH};
-use crate::tokens::token_hash_sha256;
+use crate::password::password_hash;
+use crate::tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate};
+use chrono::Utc;
 
 use super::{TestContext, TestUser};
 use crate::AuthBackend;
@@ -159,5 +163,44 @@ pub async fn sign_in_expired_refresh_token_requires_sign_in<C: TestContext>() {
             .count(),
         0,
         "expired refresh should not emit new cookies"
+    );
+}
+
+/// Session issuance should reject stale password hashes.
+pub async fn session_issue_rejects_stale_password_hash<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+
+    let stored_user = ctx
+        .backend()
+        .user_find_by_email(&user.email)
+        .await
+        .expect("db query")
+        .expect("user exists");
+    let stale_password_hash = stored_user.password_hash().to_string();
+
+    let replacement_hash = password_hash("ReplacementPass987").expect("hash password");
+    ctx.user_password_hash_set(stored_user.id(), &replacement_hash)
+        .await;
+
+    let (_, next_refresh_hash) = token_with_hash_generate();
+    let next_expires_at = token_expiry_calculate(auth_config.refresh_token_expiry);
+    assert!(next_expires_at > Utc::now());
+
+    let error = ctx
+        .backend()
+        .session_issue_if_password_hash(
+            stored_user.id(),
+            &stale_password_hash,
+            &next_refresh_hash,
+            next_expires_at,
+        )
+        .await
+        .expect_err("stale password hash must fail");
+
+    assert!(
+        matches!(error.auth_error(), AuthError::InvalidCredentials),
+        "stale password hash must reject session issuance",
     );
 }

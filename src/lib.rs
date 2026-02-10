@@ -39,7 +39,7 @@ pub mod tokens;
 pub mod verification;
 
 use axum::Router;
-pub use backend::{AuthBackend, AuthUser};
+pub use backend::{AuthBackend, AuthBackendError, AuthUser};
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
