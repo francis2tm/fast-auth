@@ -155,16 +155,16 @@ let app = Router::new()
 
 ## Endpoints
 
-| Method | Path |
-| ------ | ---- |
-| POST | `/auth/sign-up` |
-| POST | `/auth/sign-in` |
-| POST | `/auth/sign-out` |
-| GET | `/auth/me` |
-| POST | `/auth/email/confirm/send` |
-| GET | `/auth/email/confirm` |
-| POST | `/auth/password/forgot` |
-| POST | `/auth/password/reset` |
+| Method | Path                       |
+| ------ | -------------------------- |
+| POST   | `/auth/sign-up`            |
+| POST   | `/auth/sign-in`            |
+| POST   | `/auth/sign-out`           |
+| GET    | `/auth/me`                 |
+| POST   | `/auth/email/confirm/send` |
+| GET    | `/auth/email/confirm`      |
+| POST   | `/auth/password/forgot`    |
+| POST   | `/auth/password/reset`     |
 
 ## Protected routes
 
@@ -206,12 +206,3 @@ impl TestContext for TestApp {
 
 fast_auth::test_suite!(TestApp);
 ```
-
-## Breaking changes
-
-- Backend now uses error-first semantics for expected auth states.
-- `user_create` returns `User` or `AuthError::UserAlreadyExists`.
-- `session_issue_if_password_hash` returns `()` or `AuthError::InvalidCredentials`.
-- `session_revoke_by_refresh_token_hash` returns `()` or `AuthError::RefreshTokenInvalid`.
-- `session_exchange` returns `Uuid` or `AuthError::RefreshTokenInvalid`.
-- `email_confirm_apply`/`password_reset_apply` return `()` or `AuthError::InvalidToken`.
