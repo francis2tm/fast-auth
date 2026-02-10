@@ -98,7 +98,7 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     };
 
     // If email confirmation is required, do not set cookies until email is confirmed
-    if config.require_email_confirmation && user.email_confirmed_at().is_none() {
+    if config.email_confirmation_require && user.email_confirmed_at().is_none() {
         return Ok(Json(response_body).into_response());
     }
 

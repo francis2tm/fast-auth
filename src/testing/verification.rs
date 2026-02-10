@@ -430,7 +430,7 @@ pub async fn password_reset_does_not_change_password_on_invalid_token<C: TestCon
 pub async fn sign_in_rejects_unconfirmed_user_when_confirmation_required<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
     assert!(
-        ctx.auth_config().require_email_confirmation,
+        ctx.auth_config().email_confirmation_require,
         "TestContext::spawn_require_email_confirmation must enable require_email_confirmation",
     );
 
@@ -469,7 +469,7 @@ pub async fn sign_in_rejects_unconfirmed_user_when_confirmation_required<C: Test
 pub async fn sign_up_skips_cookie_issuance_when_confirmation_required<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
     assert!(
-        ctx.auth_config().require_email_confirmation,
+        ctx.auth_config().email_confirmation_require,
         "TestContext::spawn_require_email_confirmation must enable require_email_confirmation",
     );
 
@@ -498,7 +498,7 @@ pub async fn protected_route_rejects_unconfirmed_user_when_confirmation_required
     let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
     let auth_config = ctx.auth_config();
     assert!(
-        auth_config.require_email_confirmation,
+        auth_config.email_confirmation_require,
         "TestContext::spawn_require_email_confirmation must enable require_email_confirmation",
     );
 

@@ -72,19 +72,19 @@ pub struct AuthConfig {
     /// Cookie SameSite policy (default: Lax)
     pub cookie_same_site: CookieSameSite,
 
-    // --- Email Verification Settings ---
+    // --- Verification Settings ---
     /// Email verification token expiry (default: 1 hour)
     pub email_verification_token_expiry: Duration,
 
     /// Password reset token expiry (default: 1 hour)
     pub password_reset_token_expiry: Duration,
 
-    /// Base URL for email links (e.g., "https://app.example.com")
-    /// Used to construct verify/reset links sent in emails.
+    /// Base URL for email links (e.g., "https://app.example.com").
+    /// Required when `require_email_confirmation` is true.
     pub email_link_base_url: Option<String>,
 
     /// Whether to require email confirmation before login (default: false)
-    pub require_email_confirmation: bool,
+    pub email_confirmation_require: bool,
 }
 
 impl Default for AuthConfig {
@@ -108,7 +108,7 @@ impl Default for AuthConfig {
             email_verification_token_expiry: Duration::from_secs(60 * 60), // 1 hour
             password_reset_token_expiry: Duration::from_secs(60 * 60),     // 1 hour
             email_link_base_url: None,
-            require_email_confirmation: false,
+            email_confirmation_require: false,
         }
     }
 }
@@ -118,6 +118,7 @@ impl AuthConfig {
     ///
     /// Required:
     /// - `AUTH_JWT_SECRET`
+    /// - `AUTH_EMAIL_CONFIRMATION_REQUIRE`
     ///
     /// Optional variables fall back to `Default` values when not provided.
     ///
@@ -155,10 +156,7 @@ impl AuthConfig {
             cfg.password_reset_token_expiry.as_secs(),
             "u64",
         )?);
-        cfg.require_email_confirmation = env_var_bool_or_default(
-            "AUTH_REQUIRE_EMAIL_CONFIRMATION",
-            cfg.require_email_confirmation,
-        )?;
+        cfg.email_confirmation_require = env_var_bool_required("AUTH_EMAIL_CONFIRMATION_REQUIRE")?;
 
         if let Some(v) = env_var_optional("AUTH_JWT_ISSUER") {
             cfg.jwt_issuer = v;
@@ -221,6 +219,20 @@ impl AuthConfig {
             ));
         }
 
+        if self.email_confirmation_require
+            && self
+                .email_link_base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .is_none()
+        {
+            return Err(AuthConfigError::Invalid(
+                "AUTH_EMAIL_LINK_BASE_URL must be set when AUTH_EMAIL_CONFIRMATION_REQUIRE=true"
+                    .to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -256,6 +268,16 @@ fn env_var_bool_or_default(key: &str, default: bool) -> Result<bool, AuthConfigE
             ))),
         },
         _ => Ok(default),
+    }
+}
+
+fn env_var_bool_required(key: &'static str) -> Result<bool, AuthConfigError> {
+    match env_var_required(key)?.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(AuthConfigError::Invalid(format!(
+            "{key} must be a valid boolean"
+        ))),
     }
 }
 
@@ -301,5 +323,28 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(cfg.validate(), Err(AuthConfigError::Invalid(_))));
+    }
+
+    #[test]
+    #[serial]
+    fn validate_requires_email_link_base_url_when_confirmation_required() {
+        let cfg = AuthConfig {
+            jwt_secret: "a".repeat(32),
+            email_confirmation_require: true,
+            email_link_base_url: None,
+            ..Default::default()
+        };
+        assert!(matches!(cfg.validate(), Err(AuthConfigError::Invalid(_))));
+    }
+
+    #[test]
+    fn env_var_bool_required_returns_missing_env_error() {
+        let key = "AUTH_EMAIL_CONFIRMATION_REQUIRE_MISSING_TEST";
+        assert!(matches!(
+            env_var_bool_required(key),
+            Err(AuthConfigError::MissingEnv(
+                "AUTH_EMAIL_CONFIRMATION_REQUIRE_MISSING_TEST"
+            ))
+        ));
     }
 }

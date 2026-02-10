@@ -89,7 +89,7 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     }
 
     // Check email confirmation if required
-    if config.require_email_confirmation && user.email_confirmed_at().is_none() {
+    if config.email_confirmation_require && user.email_confirmed_at().is_none() {
         return Err(AuthError::EmailNotConfirmed);
     }
 
