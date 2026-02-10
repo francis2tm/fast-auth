@@ -3,10 +3,17 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde_json::json;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::AuthBackendError;
+
+/// Standard error response body returned by auth endpoints.
+#[derive(Debug, serde::Serialize, ToSchema)]
+pub struct AuthErrorResponse {
+    /// Human-readable error message.
+    pub error: String,
+}
 
 /// Authentication and authorization errors.
 #[derive(Debug, Error)]
@@ -91,9 +98,9 @@ impl IntoResponse for AuthError {
             }
         };
 
-        let body = Json(json!({
-            "error": error_message,
-        }));
+        let body = Json(AuthErrorResponse {
+            error: error_message,
+        });
 
         (status, body).into_response()
     }

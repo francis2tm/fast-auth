@@ -147,7 +147,7 @@ async fn try_refresh_token<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
         .ok_or(AuthError::UserNotFound)?;
 
     // Prevent silent refresh from authenticating users before email verification.
-    if auth.config().require_email_confirmation && user.email_confirmed_at().is_none() {
+    if auth.config().email_confirmation_require && user.email_confirmed_at().is_none() {
         let _ = auth
             .backend()
             .session_revoke_by_refresh_token_hash(&next_refresh_token_hash)

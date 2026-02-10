@@ -10,9 +10,24 @@ use crate::{
 };
 use axum::{Json, Router, extract::State, routing::post};
 use serde::{Deserialize, Serialize};
+use utoipa::{OpenApi, ToSchema};
 
+pub const PASSWORD_PATH: &str = "/auth/password";
 pub const PASSWORD_FORGOT_PATH: &str = "/auth/password/forgot";
 pub const PASSWORD_RESET_PATH: &str = "/auth/password/reset";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(password_forgot, password_reset),
+    components(schemas(
+        PasswordForgotRequest,
+        PasswordForgotResponse,
+        PasswordResetRequest,
+        PasswordResetResponse,
+        crate::error::AuthErrorResponse
+    ))
+)]
+pub(crate) struct PasswordApi;
 
 /// Returns routes for password reset endpoints.
 pub fn password_reset_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
@@ -23,21 +38,21 @@ pub fn password_reset_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
 }
 
 /// Request body for forgot password.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordForgotRequest {
     /// User's email address.
     pub email: String,
 }
 
 /// Response for forgot password.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PasswordForgotResponse {
     /// Success message.
     pub message: String,
 }
 
 /// Request body for password reset.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct PasswordResetRequest {
     /// Reset token from email link.
     pub token: String,
@@ -46,7 +61,7 @@ pub struct PasswordResetRequest {
 }
 
 /// Response for password reset.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PasswordResetResponse {
     /// Success message.
     pub message: String,
@@ -56,6 +71,16 @@ pub struct PasswordResetResponse {
 ///
 /// Creates a reset token and sends an email with the reset link.
 /// Always returns success to prevent email enumeration attacks.
+#[utoipa::path(
+    post,
+    path = "/forgot",
+    request_body = PasswordForgotRequest,
+    responses(
+        (status = OK, body = PasswordForgotResponse),
+        (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordForgotRequest>,
@@ -114,6 +139,17 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
 }
 
 /// Reset password using the token from the email.
+#[utoipa::path(
+    post,
+    path = "/reset",
+    request_body = PasswordResetRequest,
+    responses(
+        (status = OK, body = PasswordResetResponse),
+        (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
+        (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordResetRequest>,

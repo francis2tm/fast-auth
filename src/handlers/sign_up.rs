@@ -14,8 +14,20 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
+use utoipa::{OpenApi, ToSchema};
 
 pub const SIGN_UP_PATH: &str = "/auth/sign-up";
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(sign_up),
+    components(schemas(
+        SignUpRequest,
+        crate::AuthCookieResponse,
+        crate::error::AuthErrorResponse
+    ))
+)]
+pub(crate) struct SignUpApi;
 
 /// Returns routes for the /auth/sign-up endpoint.
 pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
@@ -24,7 +36,7 @@ pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
 }
 
 /// Request body for sign-up.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct SignUpRequest {
     /// User email address.
     pub email: String,
@@ -37,6 +49,17 @@ pub struct SignUpRequest {
 /// Creates a new user account with email and password.
 /// Sets access and refresh tokens as httpOnly cookies unless email confirmation is required.
 /// Calls the `on_sign_up` hook after successful user creation.
+#[utoipa::path(
+    post,
+    path = "",
+    request_body = SignUpRequest,
+    responses(
+        (status = OK, body = crate::AuthCookieResponse),
+        (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
+        (status = CONFLICT, body = crate::error::AuthErrorResponse),
+        (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
+    )
+)]
 pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignUpRequest>,
@@ -75,7 +98,7 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     };
 
     // If email confirmation is required, do not set cookies until email is confirmed
-    if config.require_email_confirmation && user.email_confirmed_at().is_none() {
+    if config.email_confirmation_require && user.email_confirmed_at().is_none() {
         return Ok(Json(response_body).into_response());
     }
 

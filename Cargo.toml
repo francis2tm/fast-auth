@@ -23,6 +23,7 @@ axum = { version = "0", features = ["macros"] }
 axum-extra = { version = "0", features = ["cookie"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
+serde_yaml = { version = "0" }
 jsonwebtoken = { version = "10", default-features = false, features = [
     "rust_crypto",
 ] }
@@ -35,6 +36,7 @@ time = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 email_address = "0"
 reqwest = { version = "0", features = ["json"], optional = true }
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 
 [dev-dependencies]
 test-utils = { version = "0", path = "../test-utils" }
