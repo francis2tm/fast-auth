@@ -134,17 +134,12 @@ impl Default for AuthConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthConfigFile {
-    auth: AuthTomlConfig,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AuthTomlConfig {
-    token: AuthTomlTokenConfig,
+    frontend: AuthTomlFrontendConfig,
     jwt: AuthTomlJwtConfig,
+    token: AuthTomlTokenConfig,
     password: AuthTomlPasswordConfig,
     cookie: AuthTomlCookieConfig,
-    email: AuthTomlEmailConfig,
+    verification: AuthTomlVerificationConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -183,14 +178,19 @@ struct AuthTomlCookieConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct AuthTomlEmailConfig {
-    verification_token_expiry_secs: u64,
+struct AuthTomlVerificationConfig {
+    email_confirmation_require: bool,
+    email_token_expiry_secs: u64,
     password_reset_token_expiry_secs: u64,
-    link_base_url: String,
-    confirmation_require: bool,
 }
 
-impl AuthTomlConfig {
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlFrontendConfig {
+    base_url: String,
+}
+
+impl AuthConfigFile {
     fn auth_config_build(self, jwt_secret: String) -> AuthConfig {
         AuthConfig {
             jwt_secret,
@@ -209,13 +209,13 @@ impl AuthTomlConfig {
             cookie_secure: self.cookie.secure,
             cookie_same_site: self.cookie.same_site,
             email_verification_token_expiry: Duration::from_secs(
-                self.email.verification_token_expiry_secs,
+                self.verification.email_token_expiry_secs,
             ),
             password_reset_token_expiry: Duration::from_secs(
-                self.email.password_reset_token_expiry_secs,
+                self.verification.password_reset_token_expiry_secs,
             ),
-            email_link_base_url: optional_string(self.email.link_base_url),
-            email_confirmation_require: self.email.confirmation_require,
+            email_link_base_url: optional_string(self.frontend.base_url),
+            email_confirmation_require: self.verification.email_confirmation_require,
         }
     }
 }
@@ -224,12 +224,12 @@ impl AuthConfig {
     /// Build auth config from a TOML file.
     ///
     /// Only `AUTH_JWT_SECRET` remains environment-driven.
-    /// All other values are loaded from `path` under the `auth` section.
+    /// All other values are loaded from `path` root sections.
     ///
     pub fn from_toml<P: AsRef<Path>>(path: P) -> Result<Self, AuthConfigError> {
         let file: AuthConfigFile = config_toml_parse(path)?;
         let jwt_secret = env_var_required("AUTH_JWT_SECRET")?;
-        let cfg = file.auth.auth_config_build(jwt_secret);
+        let cfg = file.auth_config_build(jwt_secret);
 
         cfg.validate()?;
         Ok(cfg)
@@ -358,22 +358,21 @@ mod tests {
         ));
         std::fs::write(
             &path,
-            r#"[auth]
-[auth.token]
+            r#"[token]
 access_expiry_secs = 900
 refresh_expiry_secs = 604800
 
-[auth.jwt]
+[jwt]
 issuer = "fast-auth"
 audience = "authenticated"
 
-[auth.password]
+[password]
 min_length = 8
 max_length = 128
 require_letter = true
 require_number = true
 
-[auth.cookie]
+[cookie]
 access_token_name = "access_token"
 refresh_token_name = "refresh_token"
 domain = ""
@@ -381,11 +380,13 @@ path = "/"
 secure = false
 same_site = "lax"
 
-[auth.email]
-verification_token_expiry_secs = 3600
+[verification]
+email_confirmation_require = false
+email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-confirmation_require = false
-link_base_url = ""
+
+[frontend]
+base_url = ""
 "#,
         )
         .unwrap();
@@ -417,22 +418,21 @@ link_base_url = ""
             std::env::temp_dir().join(format!("fast-auth-config-{}-load.toml", std::process::id()));
         std::fs::write(
             &path,
-            r#"[auth]
-[auth.token]
+            r#"[token]
 access_expiry_secs = 600
 refresh_expiry_secs = 604800
 
-[auth.jwt]
+[jwt]
 issuer = "fast-auth"
 audience = "authenticated"
 
-[auth.password]
+[password]
 min_length = 8
 max_length = 128
 require_letter = true
 require_number = true
 
-[auth.cookie]
+[cookie]
 access_token_name = "access_token"
 refresh_token_name = "refresh_token"
 domain = ""
@@ -440,11 +440,13 @@ path = "/"
 secure = false
 same_site = "strict"
 
-[auth.email]
-verification_token_expiry_secs = 3600
+[verification]
+email_confirmation_require = true
+email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-confirmation_require = true
-link_base_url = "http://localhost:3000"
+
+[frontend]
+base_url = "http://localhost:3000"
 "#,
         )
         .unwrap();
@@ -487,33 +489,34 @@ link_base_url = "http://localhost:3000"
         ));
         std::fs::write(
             &path,
-            r#"[auth]
-[auth.token]
+            r#"[token]
 access_expiry_secs = 900
 refresh_expiry_secs = 604800
 
-[auth.jwt]
+[jwt]
 issuer = "fast-auth"
 audience = "authenticated"
 
-[auth.password]
+[password]
 min_length = 8
 max_length = 128
 require_letter = true
 require_number = true
 
-[auth.cookie]
+[cookie]
 access_token_name = "access_token"
 refresh_token_name = "refresh_token"
 path = "/"
 secure = false
 same_site = "lax"
 
-[auth.email]
-verification_token_expiry_secs = 3600
+[verification]
+email_confirmation_require = false
+email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-confirmation_require = false
-link_base_url = ""
+
+[frontend]
+base_url = ""
 "#,
         )
         .unwrap();

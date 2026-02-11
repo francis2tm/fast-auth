@@ -2,13 +2,19 @@
  * Strict TOML shape expected by fast-auth runtime configuration.
  */
 export type FastAuthTomlConfig = {
-  auth: {
-    jwt: FastAuthJwtTomlConfig;
-    token: FastAuthTokenTomlConfig;
-    password: FastAuthPasswordTomlConfig;
-    cookie: FastAuthCookieTomlConfig;
-    email: FastAuthEmailTomlConfig;
-  };
+  frontend: FastAuthFrontendTomlConfig;
+  jwt: FastAuthJwtTomlConfig;
+  token: FastAuthTokenTomlConfig;
+  password: FastAuthPasswordTomlConfig;
+  cookie: FastAuthCookieTomlConfig;
+  verification: FastAuthVerificationTomlConfig;
+};
+
+/**
+ * Shared frontend settings used by auth links sent via email.
+ */
+export type FastAuthFrontendTomlConfig = {
+  base_url: string;
 };
 
 /**
@@ -55,47 +61,50 @@ export type FastAuthCookieTomlConfig = {
 export type FastAuthCookieSameSite = 'none' | 'lax' | 'strict';
 
 /**
- * Email and verification configuration.
+ * Verification flow settings for email confirmation and password reset.
  */
-export type FastAuthEmailTomlConfig = {
-  verification_token_expiry_secs: number;
+export type FastAuthVerificationTomlConfig = {
+  email_confirmation_require: boolean;
+  email_token_expiry_secs: number;
   password_reset_token_expiry_secs: number;
-  link_base_url: string;
-  confirmation_require: boolean;
 };
 
-type AuthSectionValueMap = {
-  'auth.jwt': FastAuthJwtTomlConfig;
-  'auth.token': FastAuthTokenTomlConfig;
-  'auth.password': FastAuthPasswordTomlConfig;
-  'auth.cookie': FastAuthCookieTomlConfig;
-  'auth.email': FastAuthEmailTomlConfig;
+type ConfigSectionValueMap = {
+  frontend: FastAuthFrontendTomlConfig;
+  jwt: FastAuthJwtTomlConfig;
+  token: FastAuthTokenTomlConfig;
+  password: FastAuthPasswordTomlConfig;
+  cookie: FastAuthCookieTomlConfig;
+  verification: FastAuthVerificationTomlConfig;
 };
 
-type AuthSectionName = keyof AuthSectionValueMap;
+type ConfigSectionName = keyof ConfigSectionValueMap;
 type PrimitiveKind = 'string' | 'boolean' | 'integer' | 'same_site';
-type AuthSectionSchema = {
-  [S in AuthSectionName]: {
-    [K in keyof AuthSectionValueMap[S]]: PrimitiveKind;
+type ConfigSectionSchema = {
+  [S in ConfigSectionName]: {
+    [K in keyof ConfigSectionValueMap[S]]: PrimitiveKind;
   };
 };
 
-const AUTH_SECTION_SCHEMA: AuthSectionSchema = {
-  'auth.jwt': {
+const CONFIG_SECTION_SCHEMA: ConfigSectionSchema = {
+  frontend: {
+    base_url: 'string'
+  },
+  jwt: {
     issuer: 'string',
     audience: 'string'
   },
-  'auth.token': {
+  token: {
     access_expiry_secs: 'integer',
     refresh_expiry_secs: 'integer'
   },
-  'auth.password': {
+  password: {
     min_length: 'integer',
     max_length: 'integer',
     require_letter: 'boolean',
     require_number: 'boolean'
   },
-  'auth.cookie': {
+  cookie: {
     access_token_name: 'string',
     refresh_token_name: 'string',
     domain: 'string',
@@ -103,11 +112,10 @@ const AUTH_SECTION_SCHEMA: AuthSectionSchema = {
     secure: 'boolean',
     same_site: 'same_site'
   },
-  'auth.email': {
-    verification_token_expiry_secs: 'integer',
-    password_reset_token_expiry_secs: 'integer',
-    link_base_url: 'string',
-    confirmation_require: 'boolean'
+  verification: {
+    email_confirmation_require: 'boolean',
+    email_token_expiry_secs: 'integer',
+    password_reset_token_expiry_secs: 'integer'
   }
 };
 
@@ -140,17 +148,18 @@ export class FastAuthConfigParseError extends Error {
  */
 export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
   const values: {
-    [S in AuthSectionName]: Partial<AuthSectionValueMap[S]>;
+    [S in ConfigSectionName]: Partial<ConfigSectionValueMap[S]>;
   } = {
-    'auth.jwt': {},
-    'auth.token': {},
-    'auth.password': {},
-    'auth.cookie': {},
-    'auth.email': {}
+    frontend: {},
+    jwt: {},
+    token: {},
+    password: {},
+    cookie: {},
+    verification: {}
   };
 
   const declaredSections = new Set<string>();
-  let currentSection: AuthSectionName | 'auth' | null = null;
+  let currentSection: ConfigSectionName | null = null;
 
   const lines = tomlText.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
@@ -172,30 +181,16 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
       );
     }
 
-    if (currentSection === 'auth') {
-      throw new FastAuthConfigParseError(
-        'root [auth] section cannot contain direct keys; use [auth.<domain>]',
-        lineNumber
-      );
-    }
-
     keyValueParse(rawLine, lineNumber, currentSection, values);
   }
 
-  const jwt = sectionCompleteGet('auth.jwt', values);
-  const token = sectionCompleteGet('auth.token', values);
-  const password = sectionCompleteGet('auth.password', values);
-  const cookie = sectionCompleteGet('auth.cookie', values);
-  const email = sectionCompleteGet('auth.email', values);
-
   const config: FastAuthTomlConfig = {
-    auth: {
-      jwt,
-      token,
-      password,
-      cookie,
-      email
-    }
+    frontend: sectionCompleteGet('frontend', values),
+    jwt: sectionCompleteGet('jwt', values),
+    token: sectionCompleteGet('token', values),
+    password: sectionCompleteGet('password', values),
+    cookie: sectionCompleteGet('cookie', values),
+    verification: sectionCompleteGet('verification', values)
   };
 
   semanticsValidate(config);
@@ -210,34 +205,35 @@ export const authConfigValidate = (value: unknown): FastAuthTomlConfig => {
     throw new FastAuthConfigParseError('config must be an object');
   }
 
-  if (!('auth' in value)) {
-    throw new FastAuthConfigParseError('missing required root key: auth');
-  }
+  const table = value as Record<string, unknown>;
+  const exactKeys = [
+    'frontend',
+    'jwt',
+    'token',
+    'password',
+    'cookie',
+    'verification'
+  ];
+  objectUnknownKeyReject(table, exactKeys, 'config');
 
-  const authRecord = (value as { auth: unknown }).auth;
-  if (typeof authRecord !== 'object' || authRecord === null) {
-    throw new FastAuthConfigParseError('auth must be an object');
-  }
+  const config: FastAuthTomlConfig = {
+    frontend: recordTypedGet(table.frontend, 'frontend') as FastAuthFrontendTomlConfig,
+    jwt: recordTypedGet(table.jwt, 'jwt') as FastAuthJwtTomlConfig,
+    token: recordTypedGet(table.token, 'token') as FastAuthTokenTomlConfig,
+    password: recordTypedGet(table.password, 'password') as FastAuthPasswordTomlConfig,
+    cookie: recordTypedGet(table.cookie, 'cookie') as FastAuthCookieTomlConfig,
+    verification: recordTypedGet(
+      table.verification,
+      'verification'
+    ) as FastAuthVerificationTomlConfig
+  };
 
-  const table = authRecord as Record<string, unknown>;
-  const exactKeys = ['jwt', 'token', 'password', 'cookie', 'email'];
-  objectUnknownKeyReject(table, exactKeys, 'auth');
-
-  const config = {
-    auth: {
-      jwt: recordTypedGet(table.jwt, 'auth.jwt'),
-      token: recordTypedGet(table.token, 'auth.token'),
-      password: recordTypedGet(table.password, 'auth.password'),
-      cookie: recordTypedGet(table.cookie, 'auth.cookie'),
-      email: recordTypedGet(table.email, 'auth.email')
-    }
-  } as FastAuthTomlConfig;
-
-  authSectionValidate('auth.jwt', config.auth.jwt);
-  authSectionValidate('auth.token', config.auth.token);
-  authSectionValidate('auth.password', config.auth.password);
-  authSectionValidate('auth.cookie', config.auth.cookie);
-  authSectionValidate('auth.email', config.auth.email);
+  configSectionValidate('frontend', config.frontend as Record<string, unknown>);
+  configSectionValidate('jwt', config.jwt as Record<string, unknown>);
+  configSectionValidate('token', config.token as Record<string, unknown>);
+  configSectionValidate('password', config.password as Record<string, unknown>);
+  configSectionValidate('cookie', config.cookie as Record<string, unknown>);
+  configSectionValidate('verification', config.verification as Record<string, unknown>);
 
   semanticsValidate(config);
   return config;
@@ -286,21 +282,22 @@ const sectionParse = (
   rawLine: string,
   lineNumber: number,
   declaredSections: Set<string>
-): AuthSectionName | 'auth' => {
+): ConfigSectionName => {
   if (!rawLine.endsWith(']')) {
     throw new FastAuthConfigParseError('invalid section header', lineNumber);
   }
 
   const sectionName = rawLine.slice(1, -1).trim();
-  const knownSections = new Set<AuthSectionName>([
-    'auth.jwt',
-    'auth.token',
-    'auth.password',
-    'auth.cookie',
-    'auth.email'
+  const knownSections = new Set<ConfigSectionName>([
+    'frontend',
+    'jwt',
+    'token',
+    'password',
+    'cookie',
+    'verification'
   ]);
 
-  if (sectionName !== 'auth' && !knownSections.has(sectionName as AuthSectionName)) {
+  if (!knownSections.has(sectionName as ConfigSectionName)) {
     throw new FastAuthConfigParseError(`unknown section: [${sectionName}]`, lineNumber);
   }
 
@@ -312,7 +309,7 @@ const sectionParse = (
   }
 
   declaredSections.add(sectionName);
-  return sectionName as AuthSectionName | 'auth';
+  return sectionName as ConfigSectionName;
 };
 
 /**
@@ -321,8 +318,8 @@ const sectionParse = (
 const keyValueParse = (
   rawLine: string,
   lineNumber: number,
-  section: AuthSectionName,
-  values: { [S in AuthSectionName]: Partial<AuthSectionValueMap[S]> }
+  section: ConfigSectionName,
+  values: { [S in ConfigSectionName]: Partial<ConfigSectionValueMap[S]> }
 ): void => {
   const separator = rawLine.indexOf('=');
   if (separator <= 0) {
@@ -335,7 +332,7 @@ const keyValueParse = (
     throw new FastAuthConfigParseError('invalid key/value expression', lineNumber);
   }
 
-  const schema = AUTH_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
   const expectedKind = schema[key];
   if (!expectedKind) {
     throw new FastAuthConfigParseError(`unknown key '${key}' in [${section}]`, lineNumber);
@@ -358,7 +355,7 @@ const keyValueParse = (
 const primitiveParse = (
   valueText: string,
   kind: PrimitiveKind,
-  section: AuthSectionName,
+  section: ConfigSectionName,
   key: string,
   lineNumber: number
 ): string | boolean | number => {
@@ -427,11 +424,11 @@ const primitiveParse = (
 /**
  * Ensure a parsed section has all required keys and return a typed value.
  */
-const sectionCompleteGet = <S extends AuthSectionName>(
+const sectionCompleteGet = <S extends ConfigSectionName>(
   section: S,
-  values: { [K in AuthSectionName]: Partial<AuthSectionValueMap[K]> }
-): AuthSectionValueMap[S] => {
-  const schema = AUTH_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  values: { [K in ConfigSectionName]: Partial<ConfigSectionValueMap[K]> }
+): ConfigSectionValueMap[S] => {
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
   const sectionValues = values[section] as Record<string, unknown>;
 
   for (const key of Object.keys(schema)) {
@@ -440,54 +437,48 @@ const sectionCompleteGet = <S extends AuthSectionName>(
     }
   }
 
-  return sectionValues as AuthSectionValueMap[S];
+  return sectionValues as ConfigSectionValueMap[S];
 };
 
 /**
  * Validate high-level semantic constraints shared with server config checks.
  */
 const semanticsValidate = (config: FastAuthTomlConfig): void => {
-  const { token, password, email } = config.auth;
+  const { token, password, verification, frontend } = config;
 
   if (token.access_expiry_secs <= 0) {
-    throw new FastAuthConfigParseError(
-      'auth.token.access_expiry_secs must be greater than 0'
-    );
+    throw new FastAuthConfigParseError('token.access_expiry_secs must be greater than 0');
   }
 
   if (token.refresh_expiry_secs <= 0) {
-    throw new FastAuthConfigParseError(
-      'auth.token.refresh_expiry_secs must be greater than 0'
-    );
+    throw new FastAuthConfigParseError('token.refresh_expiry_secs must be greater than 0');
   }
 
   if (password.min_length <= 0) {
-    throw new FastAuthConfigParseError(
-      'auth.password.min_length must be greater than 0'
-    );
+    throw new FastAuthConfigParseError('password.min_length must be greater than 0');
   }
 
   if (password.max_length < password.min_length) {
     throw new FastAuthConfigParseError(
-      'auth.password.max_length must be greater than or equal to auth.password.min_length'
+      'password.max_length must be greater than or equal to password.min_length'
     );
   }
 
-  if (email.verification_token_expiry_secs <= 0) {
+  if (verification.email_token_expiry_secs <= 0) {
     throw new FastAuthConfigParseError(
-      'auth.email.verification_token_expiry_secs must be greater than 0'
+      'verification.email_token_expiry_secs must be greater than 0'
     );
   }
 
-  if (email.password_reset_token_expiry_secs <= 0) {
+  if (verification.password_reset_token_expiry_secs <= 0) {
     throw new FastAuthConfigParseError(
-      'auth.email.password_reset_token_expiry_secs must be greater than 0'
+      'verification.password_reset_token_expiry_secs must be greater than 0'
     );
   }
 
-  if (email.confirmation_require && email.link_base_url.trim().length === 0) {
+  if (verification.email_confirmation_require && frontend.base_url.trim().length === 0) {
     throw new FastAuthConfigParseError(
-      'auth.email.link_base_url must be set when auth.email.confirmation_require=true'
+      'frontend.base_url must be set when verification.email_confirmation_require=true'
     );
   }
 };
@@ -525,11 +516,11 @@ const recordTypedGet = (
 /**
  * Validate a section object against strict field schema and value types.
  */
-const authSectionValidate = (
-  section: AuthSectionName,
+const configSectionValidate = (
+  section: ConfigSectionName,
   value: Record<string, unknown>
 ): void => {
-  const schema = AUTH_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
   objectUnknownKeyReject(value, Object.keys(schema), section);
 
   for (const [key, kind] of Object.entries(schema)) {
@@ -547,7 +538,7 @@ const authSectionValidate = (
 const primitiveValidate = (
   value: unknown,
   kind: PrimitiveKind,
-  section: AuthSectionName,
+  section: ConfigSectionName,
   key: string
 ): void => {
   if (kind === 'string') {

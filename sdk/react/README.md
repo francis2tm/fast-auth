@@ -61,21 +61,24 @@ function Page() {
 import { authConfigParseToml } from '@internal/fast-auth-react';
 
 const tomlText = `
-[auth.jwt]
+[frontend]
+base_url = "http://localhost:3000"
+
+[jwt]
 issuer = "fast-auth"
 audience = "authenticated"
 
-[auth.token]
+[token]
 access_expiry_secs = 900
 refresh_expiry_secs = 604800
 
-[auth.password]
+[password]
 min_length = 12
 max_length = 128
 require_letter = true
 require_number = true
 
-[auth.cookie]
+[cookie]
 access_token_name = "access_token"
 refresh_token_name = "refresh_token"
 domain = ""
@@ -83,15 +86,14 @@ path = "/"
 secure = false
 same_site = "lax"
 
-[auth.email]
-confirmation_require = false
-link_base_url = "http://localhost:3000"
-verification_token_expiry_secs = 3600
+[verification]
+email_confirmation_require = false
+email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
 `;
 
 const config = authConfigParseToml(tomlText);
-console.log(config.auth.password.min_length); // 12
+console.log(config.password.min_length); // 12
 ```
 
 The parser is intentionally strict:
