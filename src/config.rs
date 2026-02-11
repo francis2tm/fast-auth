@@ -140,50 +140,82 @@ struct AuthConfigFile {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthTomlConfig {
-    access_token_expiry_secs: u64,
-    refresh_token_expiry_secs: u64,
-    jwt_issuer: String,
-    jwt_audience: String,
-    password_min_length: usize,
-    password_max_length: usize,
-    password_require_letter: bool,
-    password_require_number: bool,
-    cookie_access_token_name: String,
-    cookie_refresh_token_name: String,
-    cookie_domain: String,
-    cookie_path: String,
-    cookie_secure: bool,
-    cookie_same_site: CookieSameSite,
-    email_verification_token_expiry_secs: u64,
+    token: AuthTomlTokenConfig,
+    jwt: AuthTomlJwtConfig,
+    password: AuthTomlPasswordConfig,
+    cookie: AuthTomlCookieConfig,
+    email: AuthTomlEmailConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlTokenConfig {
+    access_expiry_secs: u64,
+    refresh_expiry_secs: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlJwtConfig {
+    issuer: String,
+    audience: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlPasswordConfig {
+    min_length: usize,
+    max_length: usize,
+    require_letter: bool,
+    require_number: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlCookieConfig {
+    access_token_name: String,
+    refresh_token_name: String,
+    domain: String,
+    path: String,
+    secure: bool,
+    same_site: CookieSameSite,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthTomlEmailConfig {
+    verification_token_expiry_secs: u64,
     password_reset_token_expiry_secs: u64,
-    email_link_base_url: String,
-    email_confirmation_require: bool,
+    link_base_url: String,
+    confirmation_require: bool,
 }
 
 impl AuthTomlConfig {
     fn auth_config_build(self, jwt_secret: String) -> AuthConfig {
         AuthConfig {
             jwt_secret,
-            access_token_expiry: Duration::from_secs(self.access_token_expiry_secs),
-            refresh_token_expiry: Duration::from_secs(self.refresh_token_expiry_secs),
-            jwt_issuer: self.jwt_issuer,
-            jwt_audience: self.jwt_audience,
-            password_min_length: self.password_min_length,
-            password_max_length: self.password_max_length,
-            password_require_letter: self.password_require_letter,
-            password_require_number: self.password_require_number,
-            cookie_access_token_name: self.cookie_access_token_name,
-            cookie_refresh_token_name: self.cookie_refresh_token_name,
-            cookie_domain: optional_string(self.cookie_domain),
-            cookie_path: self.cookie_path,
-            cookie_secure: self.cookie_secure,
-            cookie_same_site: self.cookie_same_site,
+            access_token_expiry: Duration::from_secs(self.token.access_expiry_secs),
+            refresh_token_expiry: Duration::from_secs(self.token.refresh_expiry_secs),
+            jwt_issuer: self.jwt.issuer,
+            jwt_audience: self.jwt.audience,
+            password_min_length: self.password.min_length,
+            password_max_length: self.password.max_length,
+            password_require_letter: self.password.require_letter,
+            password_require_number: self.password.require_number,
+            cookie_access_token_name: self.cookie.access_token_name,
+            cookie_refresh_token_name: self.cookie.refresh_token_name,
+            cookie_domain: optional_string(self.cookie.domain),
+            cookie_path: self.cookie.path,
+            cookie_secure: self.cookie.secure,
+            cookie_same_site: self.cookie.same_site,
             email_verification_token_expiry: Duration::from_secs(
-                self.email_verification_token_expiry_secs,
+                self.email.verification_token_expiry_secs,
             ),
-            password_reset_token_expiry: Duration::from_secs(self.password_reset_token_expiry_secs),
-            email_link_base_url: optional_string(self.email_link_base_url),
-            email_confirmation_require: self.email_confirmation_require,
+            password_reset_token_expiry: Duration::from_secs(
+                self.email.password_reset_token_expiry_secs,
+            ),
+            email_link_base_url: optional_string(self.email.link_base_url),
+            email_confirmation_require: self.email.confirmation_require,
         }
     }
 }
@@ -327,24 +359,33 @@ mod tests {
         std::fs::write(
             &path,
             r#"[auth]
-access_token_expiry_secs = 900
-refresh_token_expiry_secs = 604800
-jwt_issuer = "fast-auth"
-jwt_audience = "authenticated"
-password_min_length = 8
-password_max_length = 128
-password_require_letter = true
-password_require_number = true
-cookie_access_token_name = "access_token"
-cookie_refresh_token_name = "refresh_token"
-cookie_domain = ""
-cookie_path = "/"
-cookie_secure = false
-cookie_same_site = "lax"
-email_verification_token_expiry_secs = 3600
+[auth.token]
+access_expiry_secs = 900
+refresh_expiry_secs = 604800
+
+[auth.jwt]
+issuer = "fast-auth"
+audience = "authenticated"
+
+[auth.password]
+min_length = 8
+max_length = 128
+require_letter = true
+require_number = true
+
+[auth.cookie]
+access_token_name = "access_token"
+refresh_token_name = "refresh_token"
+domain = ""
+path = "/"
+secure = false
+same_site = "lax"
+
+[auth.email]
+verification_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-email_confirmation_require = false
-email_link_base_url = ""
+confirmation_require = false
+link_base_url = ""
 "#,
         )
         .unwrap();
@@ -377,24 +418,33 @@ email_link_base_url = ""
         std::fs::write(
             &path,
             r#"[auth]
-access_token_expiry_secs = 600
-refresh_token_expiry_secs = 604800
-jwt_issuer = "fast-auth"
-jwt_audience = "authenticated"
-password_min_length = 8
-password_max_length = 128
-password_require_letter = true
-password_require_number = true
-cookie_access_token_name = "access_token"
-cookie_refresh_token_name = "refresh_token"
-cookie_domain = ""
-cookie_path = "/"
-cookie_secure = false
-email_confirmation_require = true
-email_link_base_url = "http://localhost:3000"
-cookie_same_site = "strict"
-email_verification_token_expiry_secs = 3600
+[auth.token]
+access_expiry_secs = 600
+refresh_expiry_secs = 604800
+
+[auth.jwt]
+issuer = "fast-auth"
+audience = "authenticated"
+
+[auth.password]
+min_length = 8
+max_length = 128
+require_letter = true
+require_number = true
+
+[auth.cookie]
+access_token_name = "access_token"
+refresh_token_name = "refresh_token"
+domain = ""
+path = "/"
+secure = false
+same_site = "strict"
+
+[auth.email]
+verification_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
+confirmation_require = true
+link_base_url = "http://localhost:3000"
 "#,
         )
         .unwrap();
@@ -438,23 +488,32 @@ password_reset_token_expiry_secs = 3600
         std::fs::write(
             &path,
             r#"[auth]
-access_token_expiry_secs = 900
-refresh_token_expiry_secs = 604800
-jwt_issuer = "fast-auth"
-jwt_audience = "authenticated"
-password_min_length = 8
-password_max_length = 128
-password_require_letter = true
-password_require_number = true
-cookie_access_token_name = "access_token"
-cookie_refresh_token_name = "refresh_token"
-cookie_path = "/"
-cookie_secure = false
-cookie_same_site = "lax"
-email_verification_token_expiry_secs = 3600
+[auth.token]
+access_expiry_secs = 900
+refresh_expiry_secs = 604800
+
+[auth.jwt]
+issuer = "fast-auth"
+audience = "authenticated"
+
+[auth.password]
+min_length = 8
+max_length = 128
+require_letter = true
+require_number = true
+
+[auth.cookie]
+access_token_name = "access_token"
+refresh_token_name = "refresh_token"
+path = "/"
+secure = false
+same_site = "lax"
+
+[auth.email]
+verification_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-email_confirmation_require = false
-email_link_base_url = ""
+confirmation_require = false
+link_base_url = ""
 "#,
         )
         .unwrap();
