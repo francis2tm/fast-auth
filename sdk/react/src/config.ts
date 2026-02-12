@@ -164,7 +164,7 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
   const lines = tomlText.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const lineNumber = index + 1;
-    const rawLine = lineCommentStrip(lines[index]).trim();
+    const rawLine = lineCommentStrip(lines[index] ?? '').trim();
     if (rawLine.length === 0) {
       continue;
     }

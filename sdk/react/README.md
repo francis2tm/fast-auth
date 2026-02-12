@@ -96,6 +96,15 @@ const config = authConfigParseToml(tomlText);
 console.log(config.password.min_length); // 12
 ```
 
+## Parse fast-auth.toml from disk (server/build-time)
+
+```ts
+import { parseFastAuthToml } from "@fast-auth/react/server";
+
+const config = parseFastAuthToml();
+console.log(config.verification.email_confirmation_require);
+```
+
 The parser is intentionally strict:
 
 - unknown sections/keys are rejected

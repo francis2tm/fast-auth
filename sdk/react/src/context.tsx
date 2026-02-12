@@ -28,6 +28,7 @@ import type {
   SignUpRequest,
   UserResponse
 } from './generated/types.gen';
+import type { FastAuthTomlConfig } from './config';
 
 /**
  * Structured error raised by the SDK when the API returns a non-2xx response.
@@ -70,12 +71,20 @@ export type FastAuthProviderProps = PropsWithChildren<{
    * Optional callback fired whenever user state changes.
    */
   onUserChange?: (user: UserResponse | null) => void;
+  /**
+   * Optional runtime auth config parsed from fast-auth.toml.
+   */
+  config?: FastAuthTomlConfig;
 }>;
 
 /**
  * Public auth state and actions exposed through `useAuth()`.
  */
 export type FastAuthContextValue = {
+  /**
+   * Runtime auth config parsed from fast-auth.toml when provided by the host app.
+   */
+  config: FastAuthTomlConfig | null;
   /**
    * Current authenticated user. `null` means signed out.
    */
@@ -176,6 +185,7 @@ export const FastAuthProvider = ({
   baseUrl,
   autoLoadUser = true,
   onUserChange,
+  config,
   children
 }: FastAuthProviderProps) => {
   const [user, setUser] = useState<UserResponse | null>(null);
@@ -347,6 +357,7 @@ export const FastAuthProvider = ({
 
   const contextValue = useMemo<FastAuthContextValue>(
     () => ({
+      config: config ?? null,
       user,
       loading,
       error,
@@ -361,6 +372,7 @@ export const FastAuthProvider = ({
       passwordReset: authPasswordReset
     }),
     [
+      config,
       user,
       loading,
       error,
