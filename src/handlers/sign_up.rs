@@ -6,6 +6,7 @@ use crate::{
     error::AuthError,
     password::{password_hash, password_validate},
     tokens::token_cookies_generate,
+    verification_email::email_confirm_send_for_user,
 };
 use axum::{
     Json, Router,
@@ -47,6 +48,7 @@ pub struct SignUpRequest {
 /// Sign up a new user.
 ///
 /// Creates a new user account with email and password.
+/// When email confirmation is required, it also issues/sends a confirmation email.
 /// Sets access and refresh tokens as httpOnly cookies unless email confirmation is required.
 /// Calls the `on_sign_up` hook after successful user creation.
 #[utoipa::path(
@@ -99,6 +101,13 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
 
     // If email confirmation is required, do not set cookies until email is confirmed
     if config.email_confirmation_require && user.email_confirmed_at().is_none() {
+        if let Err(error) = email_confirm_send_for_user(&auth, &user).await {
+            tracing::error!(
+                user_id = %user.id(),
+                error = ?error,
+                "Failed to issue confirmation token during sign-up"
+            );
+        }
         return Ok(Json(response_body).into_response());
     }
 

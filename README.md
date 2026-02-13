@@ -216,7 +216,7 @@ Generate `fast-auth/docs/openapi.yml`:
 cargo run -p fast-auth --bin openapi
 ```
 
-## React SDK
+## TypeScript SDK
 
-The React SDK lives at `fast-auth/sdk/react` and is generated from
+The TypeScript SDK lives at `fast-auth/sdk` and is generated from
 `fast-auth/docs/openapi.yml` using `@hey-api/openapi-ts`.

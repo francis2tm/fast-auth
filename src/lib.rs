@@ -38,10 +38,11 @@ mod password;
 pub mod testing;
 pub mod tokens;
 pub mod verification;
+mod verification_email;
 
 use axum::Router;
 pub use backend::{AuthBackend, AuthBackendError, AuthUser};
-pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
+pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
 pub use extractors::CurrentUser;

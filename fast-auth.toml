@@ -1,0 +1,29 @@
+[frontend]
+base_url = "http://localhost:3000"
+
+[jwt]
+issuer = "fast-auth"
+audience = "authenticated"
+
+[token]
+access_expiry_secs = 900
+refresh_expiry_secs = 604800
+
+[password]
+min_length = 12
+max_length = 128
+require_letter = true
+require_number = true
+
+[cookie]
+access_token_name = "access_token"
+refresh_token_name = "refresh_token"
+domain = ""
+path = "/"
+secure = false
+same_site = "lax"
+
+[verification]
+email_confirmation_require = true
+email_token_expiry_secs = 3600
+password_reset_token_expiry_secs = 3600
