@@ -1,11 +1,11 @@
 //! Handlers for email confirmation.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
+    Auth, AuthBackend, AuthHooks, EmailSender,
     email::email_validate_normalize,
     error::AuthError,
-    tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate},
-    verification::{VerificationTokenType, verification_link_build},
+    tokens::token_hash_sha256,
+    verification_email::email_confirm_send_for_user,
 };
 use axum::{
     Json, Router,
@@ -85,8 +85,6 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<EmailConfirmSendRequest>,
 ) -> Result<Json<EmailConfirmSendResponse>, AuthError> {
-    let config = auth.config();
-
     // Normalize email
     let email = email_validate_normalize(&req.email)?;
 
@@ -99,38 +97,7 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
 
     // Only send if user exists and email not already confirmed
     if let Some(user) = user {
-        if user.email_confirmed_at().is_none() {
-            // Generate token
-            let (token, hash) = token_with_hash_generate();
-            let expires_at = token_expiry_calculate(config.email_verification_token_expiry);
-
-            // Store token
-            auth.backend()
-                .verification_token_issue(
-                    user.id(),
-                    &hash,
-                    VerificationTokenType::EmailConfirm,
-                    expires_at,
-                )
-                .await
-                .map_err(AuthError::from_backend)?;
-
-            // Build verification link
-            let verify_link = verification_link_build(config, EMAIL_CONFIRM_PATH, &token);
-
-            // Send email
-            let subject = "Confirm your email address";
-            let expires_in_seconds = config.email_verification_token_expiry.as_secs();
-            let body = format!(
-                "Please confirm your email address by clicking this link:\n\n{}\n\nThis link expires in {} seconds.",
-                verify_link, expires_in_seconds
-            );
-
-            if let Err(e) = auth.email_sender().send(&email, subject, &body).await {
-                tracing::error!(error = ?e, "Failed to send confirmation email");
-                // Don't return error to prevent email enumeration
-            }
-        }
+        email_confirm_send_for_user(&auth, &user).await?;
     }
 
     // Always return success to prevent email enumeration
