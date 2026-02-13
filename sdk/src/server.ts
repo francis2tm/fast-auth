@@ -8,10 +8,10 @@ import {
 
 /**
  * Default path to fast-auth.toml, relative to the monorepo root.
- * Located at: frontend/packages/fast-auth/fast-auth.toml
+ * Located at: frontend/packages/auth/fast-auth/fast-auth.toml
  */
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const FAST_AUTH_TOML_PATH = join(__dirname, "../../../fast-auth.toml");
+export const FAST_AUTH_TOML_PATH = join(__dirname, "../../fast-auth.toml");
 
 /**
  * Parse fast-auth.toml and return validated config.
