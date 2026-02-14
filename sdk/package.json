@@ -25,7 +25,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "spec": "echo \"Generate docs/openapi.yml from the fast-auth backend workspace.\"",
+    "spec": "echo \"Generate docs/openapi.yml from the fast-auth crate.\"",
     "generate": "openapi-ts",
     "build": "pnpm run generate && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -35,9 +35,10 @@
   "dependencies": {},
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.86.0",
-    "@workspace/eslint-config": "workspace:*",
-    "@workspace/typescript-config": "workspace:*",
+    "@eslint/js": "^9.34.0",
+    "@types/node": "^24.3.1",
     "eslint": "^9.32.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.40.0"
   }
 }
