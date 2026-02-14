@@ -24,6 +24,6 @@ secure = false
 same_site = "lax"
 
 [verification]
-email_confirmation_require = true
+email_confirmation_require = false
 email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
