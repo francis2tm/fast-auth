@@ -1,11 +1,8 @@
 //! Handlers for email confirmation.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, EmailSender,
-    email::email_validate_normalize,
-    error::AuthError,
-    tokens::token_hash_sha256,
-    verification_email::email_confirm_send_for_user,
+    Auth, AuthBackend, AuthHooks, EmailSender, email::email_validate_normalize, error::AuthError,
+    tokens::token_hash_sha256, verification_email::email_confirm_send_for_user,
 };
 use axum::{
     Json, Router,
