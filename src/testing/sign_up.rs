@@ -119,6 +119,85 @@ pub async fn sign_up_rejects_invalid_email<C: TestContext>() {
     );
 }
 
+/// SQL injection payloads in email must be rejected as invalid input.
+pub async fn sign_up_rejects_sql_injection_email_payload<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let payload = "' OR '1'='1--@example.com";
+
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": payload, "password": "SecurePass123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count(),
+        0,
+        "failing validation must not emit cookies",
+    );
+
+    assert!(
+        ctx.backend()
+            .user_find_by_email(payload)
+            .await
+            .unwrap()
+            .is_none(),
+        "rejected SQL-like payload must not persist a user",
+    );
+}
+
+/// Apostrophes in valid emails must be treated as literal data.
+pub async fn sign_up_allows_single_quote_email_as_literal<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+
+    let email = format!("o'hara+{}@example.com", Uuid::new_v4());
+    let password = "SecurePass123";
+
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .expect("sign-up request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let cookies: Vec<_> = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .collect();
+    assert_eq!(cookies.len(), 2, "expected access and refresh cookies");
+
+    assert!(cookies.iter().any(|value| {
+        Cookie::parse(value.to_str().unwrap().to_string())
+            .map(|cookie| cookie.name() == auth_config.cookie_access_token_name)
+            .unwrap_or(false)
+    }));
+    assert!(cookies.iter().any(|value| {
+        Cookie::parse(value.to_str().unwrap().to_string())
+            .map(|cookie| cookie.name() == auth_config.cookie_refresh_token_name)
+            .unwrap_or(false)
+    }));
+
+    let body = response.bytes().await.unwrap();
+    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(parsed.user.email, email);
+
+    let stored_user = ctx
+        .backend()
+        .user_find_by_email(&email)
+        .await
+        .expect("db query")
+        .expect("user persisted");
+    assert_eq!(stored_user.email(), email);
+}
+
 /// Enforces password complexity to keep weak credentials from being accepted.
 pub async fn sign_up_enforces_password_complexity_rules<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;

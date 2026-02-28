@@ -94,6 +94,94 @@ pub async fn sign_in_rejects_invalid_passwords<C: TestContext>() {
     );
 }
 
+/// SQL injection payloads in email must be rejected as invalid input.
+pub async fn sign_in_rejects_sql_injection_email_payload<C: TestContext>() {
+    let (base_url, client, _ctx) = C::spawn().await;
+
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_IN_PATH))
+        .json(&json!({
+            "email": "' OR '1'='1--@example.com",
+            "password": "SecurePass123",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count(),
+        0,
+        "no cookies should be set on failure"
+    );
+}
+
+/// SQL-like passwords must be treated as literal input and never authenticate.
+pub async fn sign_in_treats_sql_like_password_as_literal<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
+
+    let token_before = ctx
+        .refresh_token_get(&refresh_token_hash)
+        .await
+        .expect("token exists");
+    assert!(token_before.revoked_at.is_none(), "token must start active");
+
+    let stored_before = ctx
+        .backend()
+        .user_find_by_email(&user.email)
+        .await
+        .expect("db query")
+        .expect("user present");
+    let before_last_sign_in = stored_before.last_sign_in_at();
+
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_IN_PATH))
+        .json(&json!({
+            "email": user.email,
+            "password": "' OR '1'='1--abc123",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count(),
+        0,
+        "no cookies should be set on failure"
+    );
+
+    let token_after = ctx
+        .refresh_token_get(&refresh_token_hash)
+        .await
+        .expect("token exists");
+    assert!(
+        token_after.revoked_at.is_none(),
+        "failed sign-in must not mutate existing sessions",
+    );
+
+    let stored_after = ctx
+        .backend()
+        .user_find_by_email(&user.email)
+        .await
+        .expect("db query")
+        .expect("user present");
+    assert_eq!(
+        stored_after.last_sign_in_at(),
+        before_last_sign_in,
+        "failed sign-in must not update last_sign_in_at",
+    );
+}
+
 /// Issuing a new refresh token should revoke every previous active token for the same user.
 pub async fn sign_in_revokes_existing_refresh_tokens<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;

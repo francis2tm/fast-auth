@@ -180,12 +180,16 @@ impl<C: TestContext> Suite<C> {
         sign_up::sign_up_creates_user_and_sets_cookies::<C>().await;
         sign_up::sign_up_rejects_duplicate_email::<C>().await;
         sign_up::sign_up_rejects_invalid_email::<C>().await;
+        sign_up::sign_up_rejects_sql_injection_email_payload::<C>().await;
+        sign_up::sign_up_allows_single_quote_email_as_literal::<C>().await;
         sign_up::sign_up_enforces_password_complexity_rules::<C>().await;
         sign_up::sign_up_handles_concurrent_duplicate_requests::<C>().await;
 
         // Sign-in tests
         sign_in::sign_in_returns_tokens_for_valid_credentials::<C>().await;
         sign_in::sign_in_rejects_invalid_passwords::<C>().await;
+        sign_in::sign_in_rejects_sql_injection_email_payload::<C>().await;
+        sign_in::sign_in_treats_sql_like_password_as_literal::<C>().await;
         sign_in::sign_in_revokes_existing_refresh_tokens::<C>().await;
         sign_in::sign_in_expired_refresh_token_requires_sign_in::<C>().await;
         sign_in::session_issue_rejects_stale_password_hash::<C>().await;
@@ -252,6 +256,17 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn sign_up_rejects_sql_injection_email_payload() {
+            $crate::testing::sign_up::sign_up_rejects_sql_injection_email_payload::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_allows_single_quote_email_as_literal() {
+            $crate::testing::sign_up::sign_up_allows_single_quote_email_as_literal::<$context>()
+                .await;
+        }
+
+        #[tokio::test]
         async fn sign_up_enforces_password_complexity_rules() {
             $crate::testing::sign_up::sign_up_enforces_password_complexity_rules::<$context>().await;
         }
@@ -269,6 +284,18 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn sign_in_rejects_invalid_passwords() {
             $crate::testing::sign_in::sign_in_rejects_invalid_passwords::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_rejects_sql_injection_email_payload() {
+            $crate::testing::sign_in::sign_in_rejects_sql_injection_email_payload::<$context>()
+                .await;
+        }
+
+        #[tokio::test]
+        async fn sign_in_treats_sql_like_password_as_literal() {
+            $crate::testing::sign_in::sign_in_treats_sql_like_password_as_literal::<$context>()
+                .await;
         }
 
         #[tokio::test]
