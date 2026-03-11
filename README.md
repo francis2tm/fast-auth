@@ -124,13 +124,9 @@ use axum::{extract::FromRef, middleware, Router};
 use fast_auth::{Auth, AuthConfig};
 
 let backend = MyBackend;
-let auth = Auth::new(
-    AuthConfig {
-        jwt_secret: "your-secret-key-at-least-32-characters-long".to_string(),
-        ..Default::default()
-    },
-    backend,
-)?;
+let mut config = AuthConfig::default();
+config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
+let auth = Auth::new(config, backend)?;
 
 #[derive(Clone)]
 struct AppState {

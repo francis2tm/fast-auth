@@ -16,7 +16,9 @@
 //!
 //! let backend = /* your AuthBackend implementation */;
 //! let secret = "your-secret-key-at-least-32-characters-long".to_string();
-//! let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
+//! let mut config = AuthConfig::default();
+//! config.jwt_secret = secret;
+//! let auth = Auth::new(config, backend).unwrap();
 //!
 //! let app = Router::new()
 //!     .merge(auth.routes())
@@ -114,10 +116,11 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 ///
 /// ```rust,ignore
 /// use fast_auth::{Auth, AuthConfig, AuthBackend};
-///
 /// let backend: impl AuthBackend = /* ... */;
 /// let secret = "your-secret-key-at-least-32-characters-long".to_string();
-/// let auth = Auth::new(AuthConfig { jwt_secret: secret, ..Default::default() }, backend).unwrap();
+/// let mut config = AuthConfig::default();
+/// config.jwt_secret = secret;
+/// let auth = Auth::new(config, backend).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = (), E: EmailSender = ()> {
