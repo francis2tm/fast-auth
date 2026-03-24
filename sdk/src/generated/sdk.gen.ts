@@ -204,6 +204,7 @@ export const signOut = <ThrowOnError extends boolean = false>(
  * Sign up a new user.
  *
  * Creates a new user account with email and password.
+ * When email confirmation is required, it also issues/sends a confirmation email.
  * Sets access and refresh tokens as httpOnly cookies unless email confirmation is required.
  * Calls the `on_sign_up` hook after successful user creation.
  */
