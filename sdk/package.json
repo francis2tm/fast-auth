@@ -26,7 +26,8 @@
   },
   "scripts": {
     "spec": "echo \"Generate docs/openapi.yml from the fast-auth crate.\"",
-    "generate": "openapi-ts",
+    "generate": "openapi-ts && pnpm format",
+    "format": "pnpm exec prettier --write \"src/**/*.{ts,tsx,md}\"",
     "build": "pnpm run generate && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc --noEmit && eslint .",

@@ -58,7 +58,7 @@ export type FastAuthCookieTomlConfig = {
 /**
  * Cookie SameSite strategy.
  */
-export type FastAuthCookieSameSite = 'none' | 'lax' | 'strict';
+export type FastAuthCookieSameSite = "none" | "lax" | "strict";
 
 /**
  * Verification flow settings for email confirmation and password reset.
@@ -79,7 +79,7 @@ type ConfigSectionValueMap = {
 };
 
 type ConfigSectionName = keyof ConfigSectionValueMap;
-type PrimitiveKind = 'string' | 'boolean' | 'integer' | 'same_site';
+type PrimitiveKind = "string" | "boolean" | "integer" | "same_site";
 type ConfigSectionSchema = {
   [S in ConfigSectionName]: {
     [K in keyof ConfigSectionValueMap[S]]: PrimitiveKind;
@@ -88,35 +88,35 @@ type ConfigSectionSchema = {
 
 const CONFIG_SECTION_SCHEMA: ConfigSectionSchema = {
   frontend: {
-    base_url: 'string'
+    base_url: "string",
   },
   jwt: {
-    issuer: 'string',
-    audience: 'string'
+    issuer: "string",
+    audience: "string",
   },
   token: {
-    access_expiry_secs: 'integer',
-    refresh_expiry_secs: 'integer'
+    access_expiry_secs: "integer",
+    refresh_expiry_secs: "integer",
   },
   password: {
-    min_length: 'integer',
-    max_length: 'integer',
-    require_letter: 'boolean',
-    require_number: 'boolean'
+    min_length: "integer",
+    max_length: "integer",
+    require_letter: "boolean",
+    require_number: "boolean",
   },
   cookie: {
-    access_token_name: 'string',
-    refresh_token_name: 'string',
-    domain: 'string',
-    path: 'string',
-    secure: 'boolean',
-    same_site: 'same_site'
+    access_token_name: "string",
+    refresh_token_name: "string",
+    domain: "string",
+    path: "string",
+    secure: "boolean",
+    same_site: "same_site",
   },
   verification: {
-    email_confirmation_require: 'boolean',
-    email_token_expiry_secs: 'integer',
-    password_reset_token_expiry_secs: 'integer'
-  }
+    email_confirmation_require: "boolean",
+    email_token_expiry_secs: "integer",
+    password_reset_token_expiry_secs: "integer",
+  },
 };
 
 /**
@@ -133,7 +133,7 @@ export class FastAuthConfigParseError extends Error {
    */
   constructor(message: string, line: number | null = null) {
     super(message);
-    this.name = 'FastAuthConfigParseError';
+    this.name = "FastAuthConfigParseError";
     this.line = line;
   }
 }
@@ -155,7 +155,7 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
     token: {},
     password: {},
     cookie: {},
-    verification: {}
+    verification: {},
   };
 
   const declaredSections = new Set<string>();
@@ -164,20 +164,20 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
   const lines = tomlText.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const lineNumber = index + 1;
-    const rawLine = lineCommentStrip(lines[index] ?? '').trim();
+    const rawLine = lineCommentStrip(lines[index] ?? "").trim();
     if (rawLine.length === 0) {
       continue;
     }
 
-    if (rawLine.startsWith('[')) {
+    if (rawLine.startsWith("[")) {
       currentSection = sectionParse(rawLine, lineNumber, declaredSections);
       continue;
     }
 
     if (currentSection === null) {
       throw new FastAuthConfigParseError(
-        'key/value must be inside a section header',
-        lineNumber
+        "key/value must be inside a section header",
+        lineNumber,
       );
     }
 
@@ -185,12 +185,12 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
   }
 
   const config: FastAuthTomlConfig = {
-    frontend: sectionCompleteGet('frontend', values),
-    jwt: sectionCompleteGet('jwt', values),
-    token: sectionCompleteGet('token', values),
-    password: sectionCompleteGet('password', values),
-    cookie: sectionCompleteGet('cookie', values),
-    verification: sectionCompleteGet('verification', values)
+    frontend: sectionCompleteGet("frontend", values),
+    jwt: sectionCompleteGet("jwt", values),
+    token: sectionCompleteGet("token", values),
+    password: sectionCompleteGet("password", values),
+    cookie: sectionCompleteGet("cookie", values),
+    verification: sectionCompleteGet("verification", values),
   };
 
   semanticsValidate(config);
@@ -201,39 +201,48 @@ export const authConfigParseToml = (tomlText: string): FastAuthTomlConfig => {
  * Validate already parsed config-like data against the strict schema.
  */
 export const authConfigValidate = (value: unknown): FastAuthTomlConfig => {
-  if (typeof value !== 'object' || value === null) {
-    throw new FastAuthConfigParseError('config must be an object');
+  if (typeof value !== "object" || value === null) {
+    throw new FastAuthConfigParseError("config must be an object");
   }
 
   const table = value as Record<string, unknown>;
   const exactKeys = [
-    'frontend',
-    'jwt',
-    'token',
-    'password',
-    'cookie',
-    'verification'
+    "frontend",
+    "jwt",
+    "token",
+    "password",
+    "cookie",
+    "verification",
   ];
-  objectUnknownKeyReject(table, exactKeys, 'config');
+  objectUnknownKeyReject(table, exactKeys, "config");
 
   const config: FastAuthTomlConfig = {
-    frontend: recordTypedGet(table.frontend, 'frontend') as FastAuthFrontendTomlConfig,
-    jwt: recordTypedGet(table.jwt, 'jwt') as FastAuthJwtTomlConfig,
-    token: recordTypedGet(table.token, 'token') as FastAuthTokenTomlConfig,
-    password: recordTypedGet(table.password, 'password') as FastAuthPasswordTomlConfig,
-    cookie: recordTypedGet(table.cookie, 'cookie') as FastAuthCookieTomlConfig,
+    frontend: recordTypedGet(
+      table.frontend,
+      "frontend",
+    ) as FastAuthFrontendTomlConfig,
+    jwt: recordTypedGet(table.jwt, "jwt") as FastAuthJwtTomlConfig,
+    token: recordTypedGet(table.token, "token") as FastAuthTokenTomlConfig,
+    password: recordTypedGet(
+      table.password,
+      "password",
+    ) as FastAuthPasswordTomlConfig,
+    cookie: recordTypedGet(table.cookie, "cookie") as FastAuthCookieTomlConfig,
     verification: recordTypedGet(
       table.verification,
-      'verification'
-    ) as FastAuthVerificationTomlConfig
+      "verification",
+    ) as FastAuthVerificationTomlConfig,
   };
 
-  configSectionValidate('frontend', config.frontend as Record<string, unknown>);
-  configSectionValidate('jwt', config.jwt as Record<string, unknown>);
-  configSectionValidate('token', config.token as Record<string, unknown>);
-  configSectionValidate('password', config.password as Record<string, unknown>);
-  configSectionValidate('cookie', config.cookie as Record<string, unknown>);
-  configSectionValidate('verification', config.verification as Record<string, unknown>);
+  configSectionValidate("frontend", config.frontend as Record<string, unknown>);
+  configSectionValidate("jwt", config.jwt as Record<string, unknown>);
+  configSectionValidate("token", config.token as Record<string, unknown>);
+  configSectionValidate("password", config.password as Record<string, unknown>);
+  configSectionValidate("cookie", config.cookie as Record<string, unknown>);
+  configSectionValidate(
+    "verification",
+    config.verification as Record<string, unknown>,
+  );
 
   semanticsValidate(config);
   return config;
@@ -243,7 +252,7 @@ export const authConfigValidate = (value: unknown): FastAuthTomlConfig => {
  * Parse and validate strict config from TOML text.
  */
 export const authConfigParseAndValidateToml = (
-  tomlText: string
+  tomlText: string,
 ): FastAuthTomlConfig => authConfigValidate(authConfigParseToml(tomlText));
 
 /**
@@ -252,7 +261,7 @@ export const authConfigParseAndValidateToml = (
 const lineCommentStrip = (line: string): string => {
   let inString = false;
   let escaped = false;
-  let output = '';
+  let output = "";
 
   for (const char of line) {
     if (char === '"' && !escaped) {
@@ -261,13 +270,13 @@ const lineCommentStrip = (line: string): string => {
       continue;
     }
 
-    if (char === '#' && !inString) {
+    if (char === "#" && !inString) {
       break;
     }
 
     output += char;
-    escaped = char === '\\' && !escaped;
-    if (char !== '\\') {
+    escaped = char === "\\" && !escaped;
+    if (char !== "\\") {
       escaped = false;
     }
   }
@@ -281,30 +290,33 @@ const lineCommentStrip = (line: string): string => {
 const sectionParse = (
   rawLine: string,
   lineNumber: number,
-  declaredSections: Set<string>
+  declaredSections: Set<string>,
 ): ConfigSectionName => {
-  if (!rawLine.endsWith(']')) {
-    throw new FastAuthConfigParseError('invalid section header', lineNumber);
+  if (!rawLine.endsWith("]")) {
+    throw new FastAuthConfigParseError("invalid section header", lineNumber);
   }
 
   const sectionName = rawLine.slice(1, -1).trim();
   const knownSections = new Set<ConfigSectionName>([
-    'frontend',
-    'jwt',
-    'token',
-    'password',
-    'cookie',
-    'verification'
+    "frontend",
+    "jwt",
+    "token",
+    "password",
+    "cookie",
+    "verification",
   ]);
 
   if (!knownSections.has(sectionName as ConfigSectionName)) {
-    throw new FastAuthConfigParseError(`unknown section: [${sectionName}]`, lineNumber);
+    throw new FastAuthConfigParseError(
+      `unknown section: [${sectionName}]`,
+      lineNumber,
+    );
   }
 
   if (declaredSections.has(sectionName)) {
     throw new FastAuthConfigParseError(
       `duplicate section declaration: [${sectionName}]`,
-      lineNumber
+      lineNumber,
     );
   }
 
@@ -319,34 +331,52 @@ const keyValueParse = (
   rawLine: string,
   lineNumber: number,
   section: ConfigSectionName,
-  values: { [S in ConfigSectionName]: Partial<ConfigSectionValueMap[S]> }
+  values: { [S in ConfigSectionName]: Partial<ConfigSectionValueMap[S]> },
 ): void => {
-  const separator = rawLine.indexOf('=');
+  const separator = rawLine.indexOf("=");
   if (separator <= 0) {
-    throw new FastAuthConfigParseError('invalid key/value expression', lineNumber);
+    throw new FastAuthConfigParseError(
+      "invalid key/value expression",
+      lineNumber,
+    );
   }
 
   const key = rawLine.slice(0, separator).trim();
   const valueText = rawLine.slice(separator + 1).trim();
   if (key.length === 0 || valueText.length === 0) {
-    throw new FastAuthConfigParseError('invalid key/value expression', lineNumber);
+    throw new FastAuthConfigParseError(
+      "invalid key/value expression",
+      lineNumber,
+    );
   }
 
-  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<
+    string,
+    PrimitiveKind
+  >;
   const expectedKind = schema[key];
   if (!expectedKind) {
-    throw new FastAuthConfigParseError(`unknown key '${key}' in [${section}]`, lineNumber);
+    throw new FastAuthConfigParseError(
+      `unknown key '${key}' in [${section}]`,
+      lineNumber,
+    );
   }
 
   const sectionValues = values[section] as Record<string, unknown>;
   if (Object.prototype.hasOwnProperty.call(sectionValues, key)) {
     throw new FastAuthConfigParseError(
       `duplicate key '${key}' in [${section}]`,
-      lineNumber
+      lineNumber,
     );
   }
 
-  sectionValues[key] = primitiveParse(valueText, expectedKind, section, key, lineNumber);
+  sectionValues[key] = primitiveParse(
+    valueText,
+    expectedKind,
+    section,
+    key,
+    lineNumber,
+  );
 };
 
 /**
@@ -357,26 +387,26 @@ const primitiveParse = (
   kind: PrimitiveKind,
   section: ConfigSectionName,
   key: string,
-  lineNumber: number
+  lineNumber: number,
 ): string | boolean | number => {
-  if (kind === 'boolean') {
-    if (valueText === 'true') {
+  if (kind === "boolean") {
+    if (valueText === "true") {
       return true;
     }
-    if (valueText === 'false') {
+    if (valueText === "false") {
       return false;
     }
     throw new FastAuthConfigParseError(
       `expected boolean for [${section}].${key}`,
-      lineNumber
+      lineNumber,
     );
   }
 
-  if (kind === 'integer') {
+  if (kind === "integer") {
     if (!/^\d+$/u.test(valueText)) {
       throw new FastAuthConfigParseError(
         `expected non-negative integer for [${section}].${key}`,
-        lineNumber
+        lineNumber,
       );
     }
 
@@ -384,7 +414,7 @@ const primitiveParse = (
     if (!Number.isSafeInteger(parsed)) {
       throw new FastAuthConfigParseError(
         `integer out of range for [${section}].${key}`,
-        lineNumber
+        lineNumber,
       );
     }
 
@@ -394,7 +424,7 @@ const primitiveParse = (
   if (!(valueText.startsWith('"') && valueText.endsWith('"'))) {
     throw new FastAuthConfigParseError(
       `expected quoted string for [${section}].${key}`,
-      lineNumber
+      lineNumber,
     );
   }
 
@@ -404,17 +434,21 @@ const primitiveParse = (
   } catch {
     throw new FastAuthConfigParseError(
       `invalid string literal for [${section}].${key}`,
-      lineNumber
+      lineNumber,
     );
   }
 
-  if (kind === 'same_site') {
-    if (parsedString === 'none' || parsedString === 'lax' || parsedString === 'strict') {
+  if (kind === "same_site") {
+    if (
+      parsedString === "none" ||
+      parsedString === "lax" ||
+      parsedString === "strict"
+    ) {
       return parsedString;
     }
     throw new FastAuthConfigParseError(
       `expected one of "none" | "lax" | "strict" for [${section}].${key}`,
-      lineNumber
+      lineNumber,
     );
   }
 
@@ -426,14 +460,19 @@ const primitiveParse = (
  */
 const sectionCompleteGet = <S extends ConfigSectionName>(
   section: S,
-  values: { [K in ConfigSectionName]: Partial<ConfigSectionValueMap[K]> }
+  values: { [K in ConfigSectionName]: Partial<ConfigSectionValueMap[K]> },
 ): ConfigSectionValueMap[S] => {
-  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<
+    string,
+    PrimitiveKind
+  >;
   const sectionValues = values[section] as Record<string, unknown>;
 
   for (const key of Object.keys(schema)) {
     if (!Object.prototype.hasOwnProperty.call(sectionValues, key)) {
-      throw new FastAuthConfigParseError(`missing required key '${key}' in [${section}]`);
+      throw new FastAuthConfigParseError(
+        `missing required key '${key}' in [${section}]`,
+      );
     }
   }
 
@@ -447,38 +486,47 @@ const semanticsValidate = (config: FastAuthTomlConfig): void => {
   const { token, password, verification, frontend } = config;
 
   if (token.access_expiry_secs <= 0) {
-    throw new FastAuthConfigParseError('token.access_expiry_secs must be greater than 0');
+    throw new FastAuthConfigParseError(
+      "token.access_expiry_secs must be greater than 0",
+    );
   }
 
   if (token.refresh_expiry_secs <= 0) {
-    throw new FastAuthConfigParseError('token.refresh_expiry_secs must be greater than 0');
+    throw new FastAuthConfigParseError(
+      "token.refresh_expiry_secs must be greater than 0",
+    );
   }
 
   if (password.min_length <= 0) {
-    throw new FastAuthConfigParseError('password.min_length must be greater than 0');
+    throw new FastAuthConfigParseError(
+      "password.min_length must be greater than 0",
+    );
   }
 
   if (password.max_length < password.min_length) {
     throw new FastAuthConfigParseError(
-      'password.max_length must be greater than or equal to password.min_length'
+      "password.max_length must be greater than or equal to password.min_length",
     );
   }
 
   if (verification.email_token_expiry_secs <= 0) {
     throw new FastAuthConfigParseError(
-      'verification.email_token_expiry_secs must be greater than 0'
+      "verification.email_token_expiry_secs must be greater than 0",
     );
   }
 
   if (verification.password_reset_token_expiry_secs <= 0) {
     throw new FastAuthConfigParseError(
-      'verification.password_reset_token_expiry_secs must be greater than 0'
+      "verification.password_reset_token_expiry_secs must be greater than 0",
     );
   }
 
-  if (verification.email_confirmation_require && frontend.base_url.trim().length === 0) {
+  if (
+    verification.email_confirmation_require &&
+    frontend.base_url.trim().length === 0
+  ) {
     throw new FastAuthConfigParseError(
-      'frontend.base_url must be set when verification.email_confirmation_require=true'
+      "frontend.base_url must be set when verification.email_confirmation_require=true",
     );
   }
 };
@@ -489,7 +537,7 @@ const semanticsValidate = (config: FastAuthTomlConfig): void => {
 const objectUnknownKeyReject = (
   record: Record<string, unknown>,
   allowedKeys: string[],
-  parentPath: string
+  parentPath: string,
 ): void => {
   const allowed = new Set(allowedKeys);
   for (const key of Object.keys(record)) {
@@ -504,9 +552,9 @@ const objectUnknownKeyReject = (
  */
 const recordTypedGet = (
   value: unknown,
-  path: string
+  path: string,
 ): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null) {
+  if (typeof value !== "object" || value === null) {
     throw new FastAuthConfigParseError(`${path} must be an object`);
   }
 
@@ -518,14 +566,19 @@ const recordTypedGet = (
  */
 const configSectionValidate = (
   section: ConfigSectionName,
-  value: Record<string, unknown>
+  value: Record<string, unknown>,
 ): void => {
-  const schema = CONFIG_SECTION_SCHEMA[section] as Record<string, PrimitiveKind>;
+  const schema = CONFIG_SECTION_SCHEMA[section] as Record<
+    string,
+    PrimitiveKind
+  >;
   objectUnknownKeyReject(value, Object.keys(schema), section);
 
   for (const [key, kind] of Object.entries(schema)) {
     if (!Object.prototype.hasOwnProperty.call(value, key)) {
-      throw new FastAuthConfigParseError(`missing required key '${section}.${key}'`);
+      throw new FastAuthConfigParseError(
+        `missing required key '${section}.${key}'`,
+      );
     }
 
     primitiveValidate(value[key], kind, section, key);
@@ -539,34 +592,38 @@ const primitiveValidate = (
   value: unknown,
   kind: PrimitiveKind,
   section: ConfigSectionName,
-  key: string
+  key: string,
 ): void => {
-  if (kind === 'string') {
-    if (typeof value !== 'string') {
-      throw new FastAuthConfigParseError(`expected string for ${section}.${key}`);
-    }
-    return;
-  }
-
-  if (kind === 'boolean') {
-    if (typeof value !== 'boolean') {
-      throw new FastAuthConfigParseError(`expected boolean for ${section}.${key}`);
-    }
-    return;
-  }
-
-  if (kind === 'integer') {
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+  if (kind === "string") {
+    if (typeof value !== "string") {
       throw new FastAuthConfigParseError(
-        `expected non-negative integer for ${section}.${key}`
+        `expected string for ${section}.${key}`,
       );
     }
     return;
   }
 
-  if (value !== 'none' && value !== 'lax' && value !== 'strict') {
+  if (kind === "boolean") {
+    if (typeof value !== "boolean") {
+      throw new FastAuthConfigParseError(
+        `expected boolean for ${section}.${key}`,
+      );
+    }
+    return;
+  }
+
+  if (kind === "integer") {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      throw new FastAuthConfigParseError(
+        `expected non-negative integer for ${section}.${key}`,
+      );
+    }
+    return;
+  }
+
+  if (value !== "none" && value !== "lax" && value !== "strict") {
     throw new FastAuthConfigParseError(
-      `expected one of "none" | "lax" | "strict" for ${section}.${key}`
+      `expected one of "none" | "lax" | "strict" for ${section}.${key}`,
     );
   }
 };
