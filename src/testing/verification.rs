@@ -5,7 +5,7 @@ use reqwest::{StatusCode, header};
 use serde_json::{Value, json};
 
 use crate::handlers::{
-    EMAIL_CONFIRM_PATH, ME_PATH, PASSWORD_RESET_PATH, SIGN_IN_PATH, SIGN_UP_PATH,
+    EMAIL_CONFIRM_PATH, PASSWORD_RESET_PATH, REFRESH_PATH, SIGN_IN_PATH, SIGN_UP_PATH,
 };
 use crate::tokens::{token_generate, token_hash_sha256};
 use crate::verification::VerificationTokenType;
@@ -163,7 +163,7 @@ pub async fn password_reset_updates_password_and_revokes_sessions<C: TestContext
     assert_eq!(new_password_sign_in.status(), StatusCode::OK);
 
     let refresh_only_response = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -493,8 +493,8 @@ pub async fn sign_up_skips_cookie_issuance_when_confirmation_required<C: TestCon
     );
 }
 
-/// Protected route refresh should fail for unconfirmed users when confirmation is required.
-pub async fn protected_route_rejects_unconfirmed_user_when_confirmation_required<C: TestContext>() {
+/// Explicit refresh should fail for unconfirmed users when confirmation is required.
+pub async fn refresh_rejects_unconfirmed_user_when_confirmation_required<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
     let auth_config = ctx.auth_config();
     assert!(
@@ -527,7 +527,7 @@ pub async fn protected_route_rejects_unconfirmed_user_when_confirmation_required
         .expect("create refresh token");
 
     let response = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -539,7 +539,7 @@ pub async fn protected_route_rejects_unconfirmed_user_when_confirmation_required
         .await
         .expect("me request");
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert_eq!(
         response
             .headers()

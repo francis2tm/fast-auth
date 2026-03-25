@@ -8,7 +8,7 @@ use crate::AuthBackendError;
 use crate::AuthCookieResponse;
 use crate::AuthError;
 use crate::AuthUser;
-use crate::handlers::{ME_PATH, SIGN_IN_PATH};
+use crate::handlers::SIGN_IN_PATH;
 use crate::password::password_hash;
 use crate::tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate};
 use chrono::Utc;
@@ -215,42 +215,6 @@ pub async fn sign_in_revokes_existing_refresh_tokens<C: TestContext>() {
     assert!(
         revoked.revoked_at.is_some(),
         "new sign-ins must revoke prior refresh tokens",
-    );
-}
-
-/// Expired refresh tokens should force the user to sign in again.
-pub async fn sign_in_expired_refresh_token_requires_sign_in<C: TestContext>() {
-    let (base_url, client, ctx) = C::spawn().await;
-    let auth_config = ctx.auth_config();
-
-    let user = TestUser::new(&base_url, &client, auth_config).await;
-    let refresh_token_hash = token_hash_sha256(&user.refresh_token);
-
-    // Expire the token
-    ctx.refresh_token_expire(&refresh_token_hash).await;
-
-    let response = client
-        .get(format!("{}{}", base_url, ME_PATH))
-        .header(
-            header::COOKIE,
-            format!(
-                "{}={}",
-                auth_config.cookie_refresh_token_name, user.refresh_token
-            ),
-        )
-        .send()
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        response
-            .headers()
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .count(),
-        0,
-        "expired refresh should not emit new cookies"
     );
 }
 

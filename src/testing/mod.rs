@@ -32,7 +32,7 @@
 //!
 //! [`AuthBackend`]: crate::AuthBackend
 
-pub mod protected_route;
+pub mod access_and_refresh;
 pub mod sign_in;
 pub mod sign_out;
 pub mod sign_up;
@@ -191,7 +191,6 @@ impl<C: TestContext> Suite<C> {
         sign_in::sign_in_rejects_sql_injection_email_payload::<C>().await;
         sign_in::sign_in_treats_sql_like_password_as_literal::<C>().await;
         sign_in::sign_in_revokes_existing_refresh_tokens::<C>().await;
-        sign_in::sign_in_expired_refresh_token_requires_sign_in::<C>().await;
         sign_in::session_issue_rejects_stale_password_hash::<C>().await;
 
         // Sign-out tests
@@ -200,20 +199,20 @@ impl<C: TestContext> Suite<C> {
         sign_out::sign_out_rejects_unknown_refresh_token_without_leaking_state::<C>().await;
         sign_out::sign_out_cannot_be_replayed_with_same_refresh_token::<C>().await;
 
-        // Protected route tests
-        protected_route::protected_route_accepts_valid_refresh_token::<C>().await;
-        protected_route::protected_route_refreshes_expired_access_token::<C>().await;
-        protected_route::protected_route_rejects_expired_refresh_token::<C>().await;
-        protected_route::protected_route_rejects_revoked_refresh_token::<C>().await;
-        protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<C>().await;
-        protected_route::protected_route_refresh_replay_race_has_single_winner::<C>().await;
-        protected_route::session_exchange_race_has_single_winner::<C>().await;
+        // Access-token and refresh tests
+        access_and_refresh::protected_route_requires_access_token::<C>().await;
+        access_and_refresh::protected_route_rejects_expired_access_token::<C>().await;
+        access_and_refresh::refresh_endpoint_accepts_valid_refresh_token::<C>().await;
+        access_and_refresh::refresh_endpoint_rejects_expired_refresh_token::<C>().await;
+        access_and_refresh::refresh_endpoint_rejects_revoked_refresh_token::<C>().await;
+        access_and_refresh::refresh_endpoint_rotates_refresh_token_and_rejects_replay::<C>().await;
+        access_and_refresh::refresh_endpoint_race_has_single_winner::<C>().await;
+        access_and_refresh::session_exchange_race_has_single_winner::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
         verification::sign_up_skips_cookie_issuance_when_confirmation_required::<C>().await;
-        verification::protected_route_rejects_unconfirmed_user_when_confirmation_required::<C>()
-            .await;
+        verification::refresh_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
         verification::email_confirm_marks_user_confirmed::<C>().await;
         verification::email_confirm_supports_get_link_flow::<C>().await;
         verification::email_confirm_rejects_expired_token_get::<C>().await;
@@ -304,11 +303,6 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
-        async fn sign_in_expired_refresh_token_requires_sign_in() {
-            $crate::testing::sign_in::sign_in_expired_refresh_token_requires_sign_in::<$context>().await;
-        }
-
-        #[tokio::test]
         async fn session_issue_rejects_stale_password_hash() {
             $crate::testing::sign_in::session_issue_rejects_stale_password_hash::<$context>().await;
         }
@@ -334,38 +328,43 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
-        async fn protected_route_accepts_valid_refresh_token() {
-            $crate::testing::protected_route::protected_route_accepts_valid_refresh_token::<$context>().await;
+        async fn protected_route_requires_access_token() {
+            $crate::testing::access_and_refresh::protected_route_requires_access_token::<$context>().await;
         }
 
         #[tokio::test]
-        async fn protected_route_refreshes_expired_access_token() {
-            $crate::testing::protected_route::protected_route_refreshes_expired_access_token::<$context>().await;
+        async fn protected_route_rejects_expired_access_token() {
+            $crate::testing::access_and_refresh::protected_route_rejects_expired_access_token::<$context>().await;
         }
 
         #[tokio::test]
-        async fn protected_route_rejects_expired_refresh_token() {
-            $crate::testing::protected_route::protected_route_rejects_expired_refresh_token::<$context>().await;
+        async fn refresh_endpoint_accepts_valid_refresh_token() {
+            $crate::testing::access_and_refresh::refresh_endpoint_accepts_valid_refresh_token::<$context>().await;
         }
 
         #[tokio::test]
-        async fn protected_route_rejects_revoked_refresh_token() {
-            $crate::testing::protected_route::protected_route_rejects_revoked_refresh_token::<$context>().await;
+        async fn refresh_endpoint_rejects_expired_refresh_token() {
+            $crate::testing::access_and_refresh::refresh_endpoint_rejects_expired_refresh_token::<$context>().await;
         }
 
         #[tokio::test]
-        async fn protected_route_rotates_refresh_token_and_rejects_replay() {
-            $crate::testing::protected_route::protected_route_rotates_refresh_token_and_rejects_replay::<$context>().await;
+        async fn refresh_endpoint_rejects_revoked_refresh_token() {
+            $crate::testing::access_and_refresh::refresh_endpoint_rejects_revoked_refresh_token::<$context>().await;
         }
 
         #[tokio::test]
-        async fn protected_route_refresh_replay_race_has_single_winner() {
-            $crate::testing::protected_route::protected_route_refresh_replay_race_has_single_winner::<$context>().await;
+        async fn refresh_endpoint_rotates_refresh_token_and_rejects_replay() {
+            $crate::testing::access_and_refresh::refresh_endpoint_rotates_refresh_token_and_rejects_replay::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn refresh_endpoint_race_has_single_winner() {
+            $crate::testing::access_and_refresh::refresh_endpoint_race_has_single_winner::<$context>().await;
         }
 
         #[tokio::test]
         async fn session_exchange_race_has_single_winner() {
-            $crate::testing::protected_route::session_exchange_race_has_single_winner::<$context>().await;
+            $crate::testing::access_and_refresh::session_exchange_race_has_single_winner::<$context>().await;
         }
 
         #[tokio::test]
@@ -379,8 +378,8 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
-        async fn protected_route_rejects_unconfirmed_user_when_confirmation_required() {
-            $crate::testing::verification::protected_route_rejects_unconfirmed_user_when_confirmation_required::<$context>().await;
+        async fn refresh_rejects_unconfirmed_user_when_confirmation_required() {
+            $crate::testing::verification::refresh_rejects_unconfirmed_user_when_confirmation_required::<$context>().await;
         }
 
         #[tokio::test]

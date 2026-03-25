@@ -1,25 +1,25 @@
-//! Protected route test functions.
+//! Access-token and refresh-endpoint test functions.
 
 use axum_extra::extract::cookie::Cookie;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use reqwest::{StatusCode, header};
-use serde_json::Value;
 
+use crate::AuthBackend;
 use crate::AuthBackendError;
+use crate::AuthCookieResponse;
 use crate::AuthError;
-use crate::handlers::ME_PATH;
+use crate::handlers::{ME_PATH, REFRESH_PATH};
 use crate::tokens::{
     AccessTokenClaims, token_expiry_calculate, token_hash_sha256, token_with_hash_generate,
 };
 
 use super::{TestContext, TestUser};
-use crate::AuthBackend;
 
 /// Create an expired access token for testing.
 fn create_expired_access_token(user_id: &str, email: &str, config: &crate::AuthConfig) -> String {
     let now = Utc::now();
-    let expired_at = now - Duration::hours(1); // Expired 1 hour ago
+    let expired_at = now - Duration::hours(1);
 
     let claims = AccessTokenClaims {
         sub: user_id.to_string(),
@@ -39,8 +39,8 @@ fn create_expired_access_token(user_id: &str, email: &str, config: &crate::AuthC
     .expect("encode expired token")
 }
 
-/// Protected route should silently refresh and succeed when refresh token is valid.
-pub async fn protected_route_accepts_valid_refresh_token<C: TestContext>() {
+/// Protected routes must reject requests that only carry a refresh token.
+pub async fn protected_route_requires_access_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
@@ -58,35 +58,24 @@ pub async fn protected_route_accepts_valid_refresh_token<C: TestContext>() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::OK);
-
-    // Middleware should emit a fresh access token.
-    let set_cookies: Vec<_> = response
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .collect();
-    assert!(
-        set_cookies.iter().any(|value| {
-            Cookie::parse(value.to_str().unwrap().to_string())
-                .map(|cookie| cookie.name() == auth_config.cookie_access_token_name)
-                .unwrap_or(false)
-        }),
-        "expected access token refresh"
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count(),
+        0,
+        "protected routes must not perform refresh",
     );
-
-    let body = response.bytes().await.unwrap();
-    let payload: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(payload["email"], user.email);
 }
 
-/// Expired access token + valid refresh token should silently refresh.
-pub async fn protected_route_refreshes_expired_access_token<C: TestContext>() {
+/// Expired access tokens must be rejected even when a refresh token is present.
+pub async fn protected_route_rejects_expired_access_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
 
-    // Decode the valid access token to get user_id
     let mut validation = jsonwebtoken::Validation::default();
     validation.set_issuer(&[&auth_config.jwt_issuer]);
     validation.set_audience(&[&auth_config.jwt_audience]);
@@ -96,12 +85,9 @@ pub async fn protected_route_refreshes_expired_access_token<C: TestContext>() {
         &validation,
     )
     .expect("decode valid token");
-    let user_id = &token_data.claims.sub;
+    let expired_access_token =
+        create_expired_access_token(&token_data.claims.sub, &user.email, auth_config);
 
-    // Create an expired access token (valid signature, but exp in the past)
-    let expired_access_token = create_expired_access_token(user_id, &user.email, auth_config);
-
-    // Send BOTH cookies: expired access token + valid refresh token
     let response = client
         .get(format!("{}{}", base_url, ME_PATH))
         .header(
@@ -118,14 +104,39 @@ pub async fn protected_route_refreshes_expired_access_token<C: TestContext>() {
         .await
         .unwrap();
 
-    // Should succeed - middleware should detect expired JWT and use refresh token
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "expired access token + valid refresh should succeed"
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .count(),
+        0,
+        "protected routes must not emit refreshed cookies",
     );
+}
 
-    // Should emit a fresh access token
+/// Refresh should issue new cookies when the refresh token is valid.
+pub async fn refresh_endpoint_accepts_valid_refresh_token<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+
+    let response = client
+        .post(format!("{}{}", base_url, REFRESH_PATH))
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                auth_config.cookie_refresh_token_name, user.refresh_token
+            ),
+        )
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
     let set_cookies: Vec<_> = response
         .headers()
         .get_all(header::SET_COOKIE)
@@ -137,26 +148,33 @@ pub async fn protected_route_refreshes_expired_access_token<C: TestContext>() {
                 .map(|cookie| cookie.name() == auth_config.cookie_access_token_name)
                 .unwrap_or(false)
         }),
-        "expected new access token cookie"
+        "expected access token refresh",
+    );
+    assert!(
+        set_cookies.iter().any(|value| {
+            Cookie::parse(value.to_str().unwrap().to_string())
+                .map(|cookie| cookie.name() == auth_config.cookie_refresh_token_name)
+                .unwrap_or(false)
+        }),
+        "expected refresh token rotation",
     );
 
     let body = response.bytes().await.unwrap();
-    let payload: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(payload["email"], user.email);
+    let payload: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(payload.user.email, user.email);
 }
 
-/// Expired refresh tokens must not authenticate or issue new cookies.
-pub async fn protected_route_rejects_expired_refresh_token<C: TestContext>() {
+/// Expired refresh tokens must be rejected without emitting cookies.
+pub async fn refresh_endpoint_rejects_expired_refresh_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
     let refresh_token_hash = token_hash_sha256(&user.refresh_token);
 
-    // Expire the token
     ctx.refresh_token_expire(&refresh_token_hash).await;
 
     let response = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -176,25 +194,24 @@ pub async fn protected_route_rejects_expired_refresh_token<C: TestContext>() {
             .iter()
             .count(),
         0,
-        "expired refresh should not emit cookies"
+        "expired refresh should not emit cookies",
     );
 }
 
 /// Revoked refresh tokens must be rejected without emitting cookies.
-pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
+pub async fn refresh_endpoint_rejects_revoked_refresh_token<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
     let refresh_token_hash = token_hash_sha256(&user.refresh_token);
 
-    // Revoke the token via AuthBackend
     ctx.backend()
         .session_revoke_by_refresh_token_hash(&refresh_token_hash)
         .await
         .expect("revoke token");
 
     let response = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -214,19 +231,19 @@ pub async fn protected_route_rejects_revoked_refresh_token<C: TestContext>() {
             .iter()
             .count(),
         0,
-        "revoked refresh should not emit cookies"
+        "revoked refresh should not emit cookies",
     );
 }
 
-/// Silent refresh should rotate refresh token and reject replay of the old token.
-pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestContext>() {
+/// Refresh should rotate refresh tokens and reject replay of the old token.
+pub async fn refresh_endpoint_rotates_refresh_token_and_rejects_replay<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
     let old_refresh_token = user.refresh_token.clone();
 
     let response = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -256,7 +273,7 @@ pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestCon
     assert_ne!(new_refresh_token, old_refresh_token);
 
     let replay = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -270,7 +287,7 @@ pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestCon
     assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
 
     let with_new = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -282,16 +299,26 @@ pub async fn protected_route_rotates_refresh_token_and_rejects_replay<C: TestCon
         .await
         .unwrap();
     assert_eq!(with_new.status(), StatusCode::OK);
+
+    let old_hash = token_hash_sha256(&old_refresh_token);
+    let old_token = ctx
+        .refresh_token_get(&old_hash)
+        .await
+        .expect("old refresh token row");
+    assert!(
+        old_token.revoked_at.is_some(),
+        "old refresh token must be revoked after refresh",
+    );
 }
 
 /// Two concurrent refresh attempts with one token should have a single winner.
-pub async fn protected_route_refresh_replay_race_has_single_winner<C: TestContext>() {
+pub async fn refresh_endpoint_race_has_single_winner<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let user = TestUser::new(&base_url, &client, auth_config).await;
 
     let request_a = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
@@ -301,7 +328,7 @@ pub async fn protected_route_refresh_replay_race_has_single_winner<C: TestContex
         )
         .send();
     let request_b = client
-        .get(format!("{}{}", base_url, ME_PATH))
+        .post(format!("{}{}", base_url, REFRESH_PATH))
         .header(
             header::COOKIE,
             format!(
