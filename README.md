@@ -9,6 +9,7 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 - Error-first backend contract with `thiserror`
 - JWT access tokens with configurable expiry
 - Refresh token rotation and replay protection
+- Explicit session refresh via `/auth/refresh`
 - HttpOnly cookie transport
 - Sign-up/sign-in hooks
 - Reusable auth conformance test suite
@@ -156,6 +157,7 @@ let app = Router::new()
 | ------ | -------------------------- |
 | POST   | `/auth/sign-up`            |
 | POST   | `/auth/sign-in`            |
+| POST   | `/auth/refresh`            |
 | POST   | `/auth/sign-out`           |
 | GET    | `/auth/me`                 |
 | POST   | `/auth/email/confirm/send` |
@@ -165,6 +167,10 @@ let app = Router::new()
 
 ## Protected routes
 
+Protected routes only accept a valid access token. When the access token expires,
+the client should call `POST /auth/refresh` with the refresh-token cookie and
+retry the protected request after applying the returned `Set-Cookie` headers.
+
 ```rust,ignore
 use axum::Json;
 use fast_auth::CurrentUser;
@@ -173,6 +179,17 @@ async fn protected_route(user: CurrentUser) -> Json<String> {
     Json(format!("Hello, {}", user.email))
 }
 ```
+
+## Refresh flow
+
+`fast-auth` does not silently refresh tokens inside arbitrary protected routes.
+The expected browser flow is:
+
+1. Call a protected endpoint with the access-token cookie.
+2. If the server returns `401 Unauthorized` because the access token expired,
+   call `POST /auth/refresh`.
+3. Apply the rotated auth cookies from the refresh response.
+4. Retry the original protected request once.
 
 ## Testing
 

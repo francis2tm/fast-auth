@@ -12,6 +12,7 @@ use utoipa::OpenApi;
     nest(
         (path = handlers::SIGN_UP_PATH, api = handlers::sign_up::SignUpApi, tags = ["auth"]),
         (path = handlers::SIGN_IN_PATH, api = handlers::sign_in::SignInApi, tags = ["auth"]),
+        (path = handlers::REFRESH_PATH, api = handlers::refresh::RefreshApi, tags = ["auth"]),
         (path = handlers::SIGN_OUT_PATH, api = handlers::sign_out::SignOutApi, tags = ["auth"]),
         (path = handlers::ME_PATH, api = handlers::me::MeApi, tags = ["auth"]),
         (
@@ -105,6 +106,7 @@ mod tests {
     #[test]
     fn openapi_yaml_generate_includes_auth_paths() {
         let yaml = openapi_yaml_generate().expect("openapi yaml");
+        assert!(yaml.contains("/auth/refresh"));
         assert!(yaml.contains("/auth/sign-in"));
         assert!(yaml.contains("/auth/sign-up"));
     }

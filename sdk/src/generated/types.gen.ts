@@ -271,6 +271,27 @@ export type PasswordResetResponses = {
 export type PasswordResetResponse2 =
   PasswordResetResponses[keyof PasswordResetResponses];
 
+export type RefreshData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/auth/refresh";
+};
+
+export type RefreshErrors = {
+  401: AuthErrorResponse;
+  403: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type RefreshError = RefreshErrors[keyof RefreshErrors];
+
+export type RefreshResponses = {
+  200: AuthCookieResponse;
+};
+
+export type RefreshResponse = RefreshResponses[keyof RefreshResponses];
+
 export type SignInData = {
   body: SignInRequest;
   path?: never;

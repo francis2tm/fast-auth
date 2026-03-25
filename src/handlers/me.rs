@@ -28,6 +28,7 @@ pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>() -> Rou
 ///
 /// # Requires
 /// - Valid JWT access token (httpOnly cookie)
+/// - Expired access tokens must be refreshed explicitly through `POST /auth/refresh`
 /// - `auth::middleware::base` middleware applied to route
 #[utoipa::path(
     get,

@@ -3,7 +3,7 @@
 //! This crate provides email/password authentication with:
 //! - JWT access tokens (short-lived)
 //! - Refresh tokens (long-lived, stored in database)
-//! - Automatic token refresh via middleware
+//! - Explicit session refresh via `/auth/refresh`
 //! - Lifecycle hooks for sign-up/sign-in events
 //! - Storage-agnostic design via [`AuthBackend`] trait
 //! - Reusable integration test suite (via `testing` feature)
@@ -173,6 +173,7 @@ impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
         Router::new()
             .merge(handlers::sign_up_routes::<B, H, E>())
             .merge(handlers::sign_in_routes::<B, H, E>())
+            .merge(handlers::refresh_routes::<B, H, E>())
             .merge(handlers::sign_out_routes::<B, H, E>())
             .merge(handlers::me_routes::<B, H, E>())
             .merge(handlers::email_confirm_routes::<B, H, E>())

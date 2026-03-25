@@ -5,13 +5,15 @@ TypeScript-only SDK for `fast-auth`, generated from the crate OpenAPI spec.
 ## Generate client
 
 ```bash
+cargo run -p fast-auth --bin openapi
 pnpm install
 pnpm run generate
 ```
 
 This runs:
 
-1. `@hey-api/openapi-ts` to regenerate `src/generated` from `fast-auth/docs/openapi.yml`
+1. `cargo run -p fast-auth --bin openapi` to regenerate `fast-auth/docs/openapi.yml`
+2. `@hey-api/openapi-ts` to regenerate `src/generated` from `fast-auth/docs/openapi.yml`
 
 ## Build
 

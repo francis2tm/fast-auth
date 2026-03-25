@@ -18,6 +18,9 @@ import type {
   PasswordResetData,
   PasswordResetErrors,
   PasswordResetResponses,
+  RefreshData,
+  RefreshErrors,
+  RefreshResponses,
   SignInData,
   SignInErrors,
   SignInResponses,
@@ -93,6 +96,7 @@ export const emailConfirmSend = <ThrowOnError extends boolean = false>(
  *
  * # Requires
  * - Valid JWT access token (httpOnly cookie)
+ * - Expired access tokens must be refreshed explicitly through `POST /auth/refresh`
  * - `auth::middleware::base` middleware applied to route
  */
 export const meGet = <ThrowOnError extends boolean = false>(
@@ -148,6 +152,25 @@ export const passwordReset = <ThrowOnError extends boolean = false>(
       "Content-Type": "application/json",
       ...options.headers,
     },
+  });
+};
+
+/**
+ * Refresh the current session using the refresh-token cookie.
+ *
+ * Rotates the refresh token, issues a new access token, and returns the
+ * refreshed user payload.
+ */
+export const refresh = <ThrowOnError extends boolean = false>(
+  options?: Options<RefreshData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).post<
+    RefreshResponses,
+    RefreshErrors,
+    ThrowOnError
+  >({
+    url: "/auth/refresh",
+    ...options,
   });
 };
 

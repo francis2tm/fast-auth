@@ -1,7 +1,7 @@
 //! Token generation and validation utilities.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, EmailSender,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
     config::AuthConfig,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
     error::AuthError,
@@ -78,7 +78,7 @@ pub fn access_token_validate(
         &validation,
     )
     .map_err(|e| {
-        // Map ExpiredSignature to TokenExpired so middleware can fall through to refresh
+        // Preserve expiration as a distinct error so callers can trigger refresh flows.
         if matches!(e.kind(), jsonwebtoken::errors::ErrorKind::ExpiredSignature) {
             AuthError::TokenExpired
         } else {
@@ -146,6 +146,53 @@ pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks<B::User>, E: Em
         .add(refresh_token_cookie_create(refresh_token, auth.config()));
 
     Ok(jar)
+}
+
+/// Rotate a refresh token and emit the next auth cookie pair.
+///
+/// Returns the updated cookie jar together with the refreshed user record.
+pub async fn token_cookies_refresh<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+    auth: &Auth<B, H, E>,
+    refresh_token: &str,
+) -> Result<(CookieJar, B::User), AuthError> {
+    let current_refresh_token_hash = token_hash_sha256(refresh_token);
+    let (next_refresh_token, next_refresh_token_hash) = token_with_hash_generate();
+    let next_refresh_token_expiry = token_expiry_calculate(auth.config().refresh_token_expiry);
+
+    let user_id = auth
+        .backend()
+        .session_exchange(
+            &current_refresh_token_hash,
+            &next_refresh_token_hash,
+            next_refresh_token_expiry,
+        )
+        .await
+        .map_err(AuthError::from_backend)?;
+    let user = auth
+        .backend()
+        .user_get_by_id(user_id)
+        .await
+        .map_err(AuthError::from_backend)?
+        .ok_or(AuthError::UserNotFound)?;
+
+    // Reject refresh for unconfirmed users when confirmation is required.
+    if auth.config().email_confirmation_require && user.email_confirmed_at().is_none() {
+        let _ = auth
+            .backend()
+            .session_revoke_by_refresh_token_hash(&next_refresh_token_hash)
+            .await;
+        return Err(AuthError::EmailNotConfirmed);
+    }
+
+    let access_token = access_token_generate(user.id(), user.email().to_owned(), auth.config())?;
+    let jar = CookieJar::new()
+        .add(access_token_cookie_create(access_token, auth.config()))
+        .add(refresh_token_cookie_create(
+            next_refresh_token,
+            auth.config(),
+        ));
+
+    Ok((jar, user))
 }
 
 #[cfg(test)]
