@@ -39,11 +39,17 @@ pub enum AuthError {
     #[error("Invalid email format")]
     InvalidEmail,
 
+    #[error("{0}")]
+    BadRequest(String),
+
     #[error("Password too weak: {0}")]
     WeakPassword(String),
 
     #[error("Refresh token not found or revoked")]
     RefreshTokenInvalid,
+
+    #[error("API key not found")]
+    ApiKeyNotFound,
 
     #[error("Password hashing error: {0}")]
     PasswordHash(String),
@@ -75,8 +81,10 @@ impl IntoResponse for AuthError {
             AuthError::UserNotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AuthError::EmailNotConfirmed => (StatusCode::FORBIDDEN, self.to_string()),
             AuthError::InvalidEmail => (StatusCode::BAD_REQUEST, self.to_string()),
+            AuthError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::WeakPassword(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::RefreshTokenInvalid => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AuthError::ApiKeyNotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AuthError::PasswordHash(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),

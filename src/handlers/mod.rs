@@ -1,5 +1,6 @@
 //! Authentication handlers.
 
+pub mod api_keys;
 pub mod email;
 pub mod me;
 pub mod password;
@@ -8,6 +9,7 @@ pub mod sign_in;
 pub mod sign_out;
 pub mod sign_up;
 
+pub use api_keys::{API_KEYS_PATH, api_key_routes};
 pub use email::{EMAIL_CONFIRM_PATH, EMAIL_CONFIRM_SEND_PATH, email_confirm_routes};
 pub use me::{ME_PATH, me_routes};
 pub use password::{

@@ -7,6 +7,117 @@ info:
     identifier: Apache-2.0
   version: 0.1.0
 paths:
+  /auth/api-keys:
+    get:
+      tags:
+      - auth
+      summary: List API keys owned by the current user.
+      operationId: api_keys_list
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKeySummary'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    post:
+      tags:
+      - auth
+      summary: Create one API key for the current user.
+      operationId: api_key_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiKeyCreateRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreateResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/api-keys/{api_key_id}:
+    delete:
+      tags:
+      - auth
+      summary: Delete one API key owned by the current user.
+      operationId: api_key_delete
+      parameters:
+      - name: api_key_id
+        in: path
+        description: API key id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeySummary'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
   /auth/email/confirm:
     get:
       tags:
@@ -112,6 +223,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
   /auth/password/forgot:
     post:
       tags:
@@ -342,6 +456,77 @@ paths:
                 $ref: '#/components/schemas/AuthErrorResponse'
 components:
   schemas:
+    ApiKeyCreateRequest:
+      type: object
+      description: Request body for API key creation.
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          description: User-defined API key name.
+    ApiKeyCreateResponse:
+      type: object
+      description: API key creation response with one-time plaintext key.
+      required:
+      - id
+      - name
+      - key
+      - key_prefix
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        id:
+          type: string
+          format: uuid
+          description: API key identifier.
+        key:
+          type: string
+          description: Plaintext key returned once.
+        key_prefix:
+          type: string
+          description: Stable visible key prefix.
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Last successful use timestamp.
+        name:
+          type: string
+          description: User-defined display name.
+    ApiKeySummary:
+      type: object
+      description: API key summary returned by list and delete endpoints.
+      required:
+      - id
+      - name
+      - key_prefix
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+        id:
+          type: string
+          format: uuid
+          description: API key identifier.
+        key_prefix:
+          type: string
+          description: Stable visible key prefix.
+        last_used_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Last successful use timestamp.
+        name:
+          type: string
+          description: User-defined display name.
     AuthCookieResponse:
       type: object
       description: Auth response body. Tokens are set as httpOnly cookies.
@@ -492,6 +677,15 @@ components:
           - 'null'
         id:
           type: string
+  securitySchemes:
+    bearerApiKey:
+      type: apiKey
+      in: header
+      name: Authorization
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: access_token
 tags:
 - name: auth
   description: Authentication management

@@ -33,6 +33,7 @@ pub fn me_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>() -> Rou
 #[utoipa::path(
     get,
     path = "",
+    security(("sessionCookie" = []), ("bearerApiKey" = [])),
     responses(
         (status = OK, body = crate::UserResponse),
         (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),

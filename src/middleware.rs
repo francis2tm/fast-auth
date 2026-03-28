@@ -1,7 +1,7 @@
 //! Authentication middleware for Axum.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, EmailSender,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
     cookies::{access_token_cookie_clear, refresh_token_cookie_clear},
     error::AuthError,
     tokens::access_token_validate,
@@ -60,8 +60,31 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     let mut context = UserContext::default();
     let config = auth.config();
 
-    // Try JWT first
-    if let Some(jwt_cookie) = jar.get(&config.cookie_access_token_name) {
+    // Prefer explicit bearer auth over ambient browser cookies when both exist.
+    if let Some(auth_header) = request.headers().get(axum::http::header::AUTHORIZATION) {
+        let Ok(auth_header) = auth_header.to_str() else {
+            return AuthError::InvalidToken.into_response();
+        };
+        let Some(api_key) = auth_header.strip_prefix("Bearer ") else {
+            return AuthError::InvalidToken.into_response();
+        };
+
+        // API keys are stateful credentials, so invalid bearer auth fails immediately.
+        match auth
+            .backend()
+            .api_key_authenticate(api_key, chrono::Utc::now())
+            .await
+        {
+            Ok(Some(user)) => {
+                context.user_id = Some(user.id());
+                context.email = Some(user.email().to_string());
+                context.role = "authenticated".to_string();
+            }
+            Ok(None) => return AuthError::InvalidToken.into_response(),
+            Err(error) => return AuthError::from_backend(error).into_response(),
+        }
+    } else if let Some(jwt_cookie) = jar.get(&config.cookie_access_token_name) {
+        // Cookie auth is best-effort here; refresh is handled explicitly by /auth/refresh.
         match access_token_validate(jwt_cookie.value(), config) {
             Ok(claims) => {
                 if let Ok(user_id) = Uuid::parse_str(&claims.sub) {

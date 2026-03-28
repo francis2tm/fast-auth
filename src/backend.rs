@@ -4,7 +4,9 @@
 //! and persistence layer.
 
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use std::future::Future;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::AuthError;
@@ -65,6 +67,42 @@ pub trait AuthBackendError: std::error::Error + Send + Sync + 'static {
     fn auth_error(&self) -> AuthError {
         AuthError::Backend(self.to_string())
     }
+}
+
+/// Stored API key metadata exposed by auth backends.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AuthApiKey {
+    /// API key identifier.
+    pub id: Uuid,
+    /// User-defined display name.
+    pub name: String,
+    /// Stable visible key prefix.
+    pub key_prefix: String,
+    /// Creation timestamp.
+    pub created_at: DateTime<Utc>,
+    /// Last successful use timestamp.
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+/// API key creation result returned only at creation time.
+///
+/// The plaintext `key` is included here because API keys are stored hashed at
+/// rest and cannot be shown again after creation. List/read flows should use
+/// [`AuthApiKey`] instead, which exposes metadata only.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AuthApiKeyWithSecret {
+    /// API key identifier.
+    pub id: Uuid,
+    /// User-defined display name.
+    pub name: String,
+    /// Plaintext key material returned once.
+    pub key: String,
+    /// Stable visible key prefix.
+    pub key_prefix: String,
+    /// Creation timestamp.
+    pub created_at: DateTime<Utc>,
+    /// Last successful use timestamp.
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 /// Storage backend contract for authentication operations.
@@ -143,6 +181,35 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         email: &str,
         password_hash: &str,
     ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
+
+    /// Creates one API key for a user.
+    fn api_key_create(
+        &self,
+        user_id: Uuid,
+        name: &str,
+        key_prefix: &str,
+        key_hash: &str,
+    ) -> impl Future<Output = Result<AuthApiKey, Self::Error>> + Send;
+
+    /// Lists all API keys owned by a user.
+    fn api_keys_list(
+        &self,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<AuthApiKey>, Self::Error>> + Send;
+
+    /// Deletes one owned API key.
+    fn api_key_delete(
+        &self,
+        user_id: Uuid,
+        api_key_id: Uuid,
+    ) -> impl Future<Output = Result<AuthApiKey, Self::Error>> + Send;
+
+    /// Authenticates one bearer API key and updates its last-used timestamp.
+    fn api_key_authenticate(
+        &self,
+        api_key: &str,
+        used_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
     /// Revokes all active refresh tokens for `user_id` and inserts a new one.
     ///

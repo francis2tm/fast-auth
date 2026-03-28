@@ -33,6 +33,7 @@
 //! [`AuthBackend`]: crate::AuthBackend
 
 pub mod access_and_refresh;
+pub mod api_keys;
 pub mod sign_in;
 pub mod sign_out;
 pub mod sign_up;
@@ -47,7 +48,7 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::AuthBackend;
-use crate::handlers::SIGN_UP_PATH;
+use crate::handlers::{API_KEYS_PATH, SIGN_UP_PATH};
 use crate::{AuthConfig, AuthUser};
 
 /// Refresh token information for test assertions.
@@ -72,6 +73,8 @@ pub struct TestUser {
     pub access_token: String,
     /// Refresh token cookie value.
     pub refresh_token: String,
+    /// API key returned by the create endpoint, when requested.
+    pub api_key: Option<String>,
 }
 
 impl TestUser {
@@ -95,6 +98,7 @@ impl TestUser {
             password: password.to_string(),
             access_token,
             refresh_token,
+            api_key: None,
         }
     }
 
@@ -118,6 +122,44 @@ impl TestUser {
             self.access_token,
             config.cookie_refresh_token_name,
             self.refresh_token
+        )
+    }
+
+    /// Create one API key for this user and store it on the test user.
+    pub async fn api_key_create(
+        &mut self,
+        base_url: &str,
+        client: &Client,
+        config: &AuthConfig,
+        name: &str,
+    ) -> String {
+        let response = client
+            .post(format!("{base_url}{API_KEYS_PATH}"))
+            .header(header::COOKIE, self.cookie_header(config))
+            .json(&json!({ "name": name }))
+            .send()
+            .await
+            .expect("api key request");
+        assert!(
+            response.status().is_success(),
+            "api key request failed with status {}",
+            response.status()
+        );
+
+        let payload: serde_json::Value = response.json().await.expect("api key json");
+        let api_key = payload["key"]
+            .as_str()
+            .expect("api key response should contain key")
+            .to_string();
+        self.api_key = Some(api_key.clone());
+        api_key
+    }
+
+    /// Build the Authorization header for bearer API key requests.
+    pub fn api_key_auth_header(&self) -> String {
+        format!(
+            "Bearer {}",
+            self.api_key.as_deref().expect("api key should be present")
         )
     }
 }
@@ -208,6 +250,11 @@ impl<C: TestContext> Suite<C> {
         access_and_refresh::refresh_endpoint_rotates_refresh_token_and_rejects_replay::<C>().await;
         access_and_refresh::refresh_endpoint_race_has_single_winner::<C>().await;
         access_and_refresh::session_exchange_race_has_single_winner::<C>().await;
+
+        // API key tests
+        api_keys::api_key_create_list_use_delete_flow::<C>().await;
+        api_keys::bearer_api_key_takes_precedence_over_cookie::<C>().await;
+        api_keys::invalid_api_key_returns_unauthorized::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -365,6 +412,22 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn session_exchange_race_has_single_winner() {
             $crate::testing::access_and_refresh::session_exchange_race_has_single_winner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn api_key_create_list_use_delete_flow() {
+            $crate::testing::api_keys::api_key_create_list_use_delete_flow::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn bearer_api_key_takes_precedence_over_cookie() {
+            $crate::testing::api_keys::bearer_api_key_takes_precedence_over_cookie::<$context>()
+                .await;
+        }
+
+        #[tokio::test]
+        async fn invalid_api_key_returns_unauthorized() {
+            $crate::testing::api_keys::invalid_api_key_returns_unauthorized::<$context>().await;
         }
 
         #[tokio::test]

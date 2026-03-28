@@ -4,16 +4,25 @@ use std::path::{Path, PathBuf};
 
 use crate::handlers;
 use thiserror::Error;
-use utoipa::OpenApi;
+use utoipa::{
+    Modify, OpenApi,
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
+};
 
 /// OpenAPI document for all public fast-auth HTTP endpoints.
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&SecurityAddon),
     nest(
         (path = handlers::SIGN_UP_PATH, api = handlers::sign_up::SignUpApi, tags = ["auth"]),
         (path = handlers::SIGN_IN_PATH, api = handlers::sign_in::SignInApi, tags = ["auth"]),
         (path = handlers::REFRESH_PATH, api = handlers::refresh::RefreshApi, tags = ["auth"]),
         (path = handlers::SIGN_OUT_PATH, api = handlers::sign_out::SignOutApi, tags = ["auth"]),
+        (
+            path = handlers::API_KEYS_PATH,
+            api = handlers::api_keys::ApiKeyApi,
+            tags = ["auth"]
+        ),
         (path = handlers::ME_PATH, api = handlers::me::MeApi, tags = ["auth"]),
         (
             path = handlers::EMAIL_CONFIRM_PATH,
@@ -29,6 +38,24 @@ use utoipa::OpenApi;
     tags((name = "auth", description = "Authentication management"))
 )]
 pub struct AuthApiDoc;
+
+/// Security modifier shared by all generated auth OpenAPI documents.
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "sessionCookie",
+                SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("access_token"))),
+            );
+            components.add_security_scheme(
+                "bearerApiKey",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("Authorization"))),
+            );
+        }
+    }
+}
 
 /// OpenAPI generation and file-write errors.
 #[derive(Debug, Error)]

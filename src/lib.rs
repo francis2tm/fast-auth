@@ -1,9 +1,12 @@
-//! Fast, extensible authentication library for Axum with JWT and refresh tokens.
+//! Fast, extensible authentication library for Axum with JWT, refresh tokens,
+//! and user API keys.
 //!
 //! This crate provides email/password authentication with:
 //! - JWT access tokens (short-lived)
 //! - Refresh tokens (long-lived, stored in database)
 //! - Explicit session refresh via `/auth/refresh`
+//! - Bearer API keys for non-browser integrations
+//! - API key management routes under `/auth/api-keys`
 //! - Lifecycle hooks for sign-up/sign-in events
 //! - Storage-agnostic design via [`AuthBackend`] trait
 //! - Reusable integration test suite (via `testing` feature)
@@ -25,6 +28,7 @@
 //!     .with_state(auth);
 //! ```
 
+pub mod api_key;
 mod backend;
 mod config;
 mod cookies;
@@ -42,15 +46,18 @@ pub mod tokens;
 pub mod verification;
 mod verification_email;
 
+pub use api_key::{api_key_generate, api_key_hash, api_key_issue, api_key_prefix_extract};
 use axum::Router;
-pub use backend::{AuthBackend, AuthBackendError, AuthUser};
+pub use backend::{AuthApiKey, AuthApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser};
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
 pub use extractors::CurrentUser;
+pub use handlers::api_keys::{ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeySummary};
 pub use handlers::sign_in::SignInRequest;
 pub use handlers::sign_out::SignOutResponse;
 pub use handlers::sign_up::SignUpRequest;
+pub use password::password_verify;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::sync::Arc;
@@ -175,6 +182,7 @@ impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
             .merge(handlers::sign_in_routes::<B, H, E>())
             .merge(handlers::refresh_routes::<B, H, E>())
             .merge(handlers::sign_out_routes::<B, H, E>())
+            .merge(handlers::api_key_routes::<B, H, E>())
             .merge(handlers::me_routes::<B, H, E>())
             .merge(handlers::email_confirm_routes::<B, H, E>())
             .merge(handlers::password_reset_routes::<B, H, E>())

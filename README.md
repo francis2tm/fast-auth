@@ -1,6 +1,6 @@
 # fast-auth
 
-A simple authentication library for Axum with JWT access tokens, rotating refresh tokens, and pluggable storage.
+A simple authentication library for Axum with JWT access tokens, rotating refresh tokens, user API keys, and pluggable storage.
 
 ## Features
 
@@ -11,6 +11,8 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 - Refresh token rotation and replay protection
 - Explicit session refresh via `/auth/refresh`
 - HttpOnly cookie transport
+- Bearer API key authentication for protected routes
+- API key management endpoints with one-time secret reveal
 - Sign-up/sign-in hooks
 - Reusable auth conformance test suite
 
@@ -88,6 +90,36 @@ impl AuthBackend for MyBackend {
         Err(MyError::UserAlreadyExists)
     }
 
+    async fn api_key_create(
+        &self,
+        _user_id: Uuid,
+        _name: &str,
+        _key_prefix: &str,
+        _key_hash: &str,
+    ) -> Result<fast_auth::AuthApiKey, Self::Error> {
+        Err(MyError::Unexpected("not implemented".to_string()))
+    }
+
+    async fn api_keys_list(&self, _user_id: Uuid) -> Result<Vec<fast_auth::AuthApiKey>, Self::Error> {
+        Ok(Vec::new())
+    }
+
+    async fn api_key_delete(
+        &self,
+        _user_id: Uuid,
+        _api_key_id: Uuid,
+    ) -> Result<fast_auth::AuthApiKey, Self::Error> {
+        Err(MyError::Unexpected("not implemented".to_string()))
+    }
+
+    async fn api_key_authenticate(
+        &self,
+        _api_key: &str,
+        _used_at: DateTime<Utc>,
+    ) -> Result<Option<Self::User>, Self::Error> {
+        Ok(None)
+    }
+
     async fn session_issue(&self, _user_id: Uuid, _refresh_token_hash: &str, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -155,6 +187,9 @@ let app = Router::new()
 
 | Method | Path                       |
 | ------ | -------------------------- |
+| POST   | `/auth/api-keys`           |
+| GET    | `/auth/api-keys`           |
+| DELETE | `/auth/api-keys/{id}`      |
 | POST   | `/auth/sign-up`            |
 | POST   | `/auth/sign-in`            |
 | POST   | `/auth/refresh`            |
@@ -167,9 +202,14 @@ let app = Router::new()
 
 ## Protected routes
 
-Protected routes only accept a valid access token. When the access token expires,
-the client should call `POST /auth/refresh` with the refresh-token cookie and
-retry the protected request after applying the returned `Set-Cookie` headers.
+Protected routes accept either:
+
+- a valid access-token cookie, or
+- `Authorization: Bearer <api_key>`
+
+Cookie-backed browser sessions still use `POST /auth/refresh` when the access
+token expires. API keys are long-lived credentials managed explicitly through
+the API-key endpoints and are not refreshed.
 
 ```rust,ignore
 use axum::Json;
@@ -179,6 +219,26 @@ async fn protected_route(user: CurrentUser) -> Json<String> {
     Json(format!("Hello, {}", user.email))
 }
 ```
+
+## API keys
+
+Users can create API keys through the auth API:
+
+- `POST /auth/api-keys` creates a key and returns the plaintext secret once
+- `GET /auth/api-keys` lists key metadata
+- `DELETE /auth/api-keys/{id}` deletes a key
+
+Keys are stored hashed at rest. The returned plaintext secret is only available
+at creation time, so callers should persist it immediately.
+
+Use API keys on protected routes with:
+
+```http
+Authorization: Bearer sk-<secret>
+```
+
+If both a bearer API key and auth cookies are present, `fast-auth` prefers the
+bearer API key.
 
 ## Refresh flow
 
@@ -190,6 +250,8 @@ The expected browser flow is:
    call `POST /auth/refresh`.
 3. Apply the rotated auth cookies from the refresh response.
 4. Retry the original protected request once.
+
+This refresh flow applies only to cookie-backed sessions, not API keys.
 
 ## Testing
 
