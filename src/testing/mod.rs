@@ -90,8 +90,10 @@ impl TestUser {
             .await
             .expect("sign-up request");
 
-        let access_token = Self::extract_cookie(resp.headers(), &config.cookie_access_token_name);
-        let refresh_token = Self::extract_cookie(resp.headers(), &config.cookie_refresh_token_name);
+        let access_token = Self::extract_cookie(resp.headers(), &config.cookie_access_token_name)
+            .expect("sign-up should set access token cookie");
+        let refresh_token = Self::extract_cookie(resp.headers(), &config.cookie_refresh_token_name)
+            .expect("sign-up should set refresh token cookie");
 
         Self {
             email,
@@ -102,8 +104,8 @@ impl TestUser {
         }
     }
 
-    /// Extract a cookie value from response headers.
-    pub fn extract_cookie(headers: &reqwest::header::HeaderMap, name: &str) -> String {
+    /// Find a cookie value in response headers.
+    pub fn extract_cookie(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
         headers
             .get_all(header::SET_COOKIE)
             .iter()
@@ -111,7 +113,6 @@ impl TestUser {
                 let c = Cookie::parse(v.to_str().ok()?.to_string()).ok()?;
                 (c.name() == name).then(|| c.value().to_string())
             })
-            .unwrap_or_default()
     }
 
     /// Build the cookie header for authenticated requests.
