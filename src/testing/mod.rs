@@ -106,13 +106,10 @@ impl TestUser {
 
     /// Find a cookie value in response headers.
     pub fn extract_cookie(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
-        headers
-            .get_all(header::SET_COOKIE)
-            .iter()
-            .find_map(|v| {
-                let c = Cookie::parse(v.to_str().ok()?.to_string()).ok()?;
-                (c.name() == name).then(|| c.value().to_string())
-            })
+        headers.get_all(header::SET_COOKIE).iter().find_map(|v| {
+            let c = Cookie::parse(v.to_str().ok()?.to_string()).ok()?;
+            (c.name() == name).then(|| c.value().to_string())
+        })
     }
 
     /// Build the cookie header for authenticated requests.

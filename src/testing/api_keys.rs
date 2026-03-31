@@ -26,7 +26,10 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
 
     let listed: serde_json::Value = list_response.json().await.expect("list json");
     assert_eq!(listed.as_array().expect("array").len(), 1);
-    assert!(listed[0].get("key").is_none(), "list must not leak plaintext key");
+    assert!(
+        listed[0].get("key").is_none(),
+        "list must not leak plaintext key"
+    );
     assert!(listed[0]["last_used_at"].is_null());
 
     let me_response = client
