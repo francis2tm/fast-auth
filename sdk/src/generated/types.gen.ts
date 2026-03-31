@@ -5,6 +5,72 @@ export type ClientOptions = {
 };
 
 /**
+ * Request body for API key creation.
+ */
+export type ApiKeyCreateRequest = {
+  /**
+   * User-defined API key name.
+   */
+  name: string;
+};
+
+/**
+ * API key creation response with one-time plaintext key.
+ */
+export type ApiKeyCreateResponse = {
+  /**
+   * Creation timestamp.
+   */
+  created_at: string;
+  /**
+   * API key identifier.
+   */
+  id: string;
+  /**
+   * Plaintext key returned once.
+   */
+  key: string;
+  /**
+   * Stable visible key prefix.
+   */
+  key_prefix: string;
+  /**
+   * Last successful use timestamp.
+   */
+  last_used_at?: string | null;
+  /**
+   * User-defined display name.
+   */
+  name: string;
+};
+
+/**
+ * API key summary returned by list and delete endpoints.
+ */
+export type ApiKeySummary = {
+  /**
+   * Creation timestamp.
+   */
+  created_at: string;
+  /**
+   * API key identifier.
+   */
+  id: string;
+  /**
+   * Stable visible key prefix.
+   */
+  key_prefix: string;
+  /**
+   * Last successful use timestamp.
+   */
+  last_used_at?: string | null;
+  /**
+   * User-defined display name.
+   */
+  name: string;
+};
+
+/**
  * Auth response body. Tokens are set as httpOnly cookies.
  */
 export type AuthCookieResponse = {
@@ -156,6 +222,76 @@ export type UserResponse = {
   email_confirmed_at?: string | null;
   id: string;
 };
+
+export type ApiKeysListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/auth/api-keys";
+};
+
+export type ApiKeysListErrors = {
+  401: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type ApiKeysListError = ApiKeysListErrors[keyof ApiKeysListErrors];
+
+export type ApiKeysListResponses = {
+  200: Array<ApiKeySummary>;
+};
+
+export type ApiKeysListResponse =
+  ApiKeysListResponses[keyof ApiKeysListResponses];
+
+export type ApiKeyCreateData = {
+  body: ApiKeyCreateRequest;
+  path?: never;
+  query?: never;
+  url: "/auth/api-keys";
+};
+
+export type ApiKeyCreateErrors = {
+  400: AuthErrorResponse;
+  401: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type ApiKeyCreateError = ApiKeyCreateErrors[keyof ApiKeyCreateErrors];
+
+export type ApiKeyCreateResponses = {
+  200: ApiKeyCreateResponse;
+};
+
+export type ApiKeyCreateResponse2 =
+  ApiKeyCreateResponses[keyof ApiKeyCreateResponses];
+
+export type ApiKeyDeleteData = {
+  body?: never;
+  path: {
+    /**
+     * API key id
+     */
+    api_key_id: string;
+  };
+  query?: never;
+  url: "/auth/api-keys/{api_key_id}";
+};
+
+export type ApiKeyDeleteErrors = {
+  401: AuthErrorResponse;
+  404: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type ApiKeyDeleteError = ApiKeyDeleteErrors[keyof ApiKeyDeleteErrors];
+
+export type ApiKeyDeleteResponses = {
+  200: ApiKeySummary;
+};
+
+export type ApiKeyDeleteResponse =
+  ApiKeyDeleteResponses[keyof ApiKeyDeleteResponses];
 
 export type EmailConfirmGetData = {
   body?: never;

@@ -3,6 +3,15 @@
 import type { Client, Options as Options2, TDataShape } from "./client";
 import { client } from "./client.gen";
 import type {
+  ApiKeyCreateData,
+  ApiKeyCreateErrors,
+  ApiKeyCreateResponses,
+  ApiKeyDeleteData,
+  ApiKeyDeleteErrors,
+  ApiKeyDeleteResponses,
+  ApiKeysListData,
+  ApiKeysListErrors,
+  ApiKeysListResponses,
   EmailConfirmGetData,
   EmailConfirmGetErrors,
   EmailConfirmGetResponses,
@@ -47,6 +56,91 @@ export type Options<
    * used to access values that aren't defined as part of the SDK function.
    */
   meta?: Record<string, unknown>;
+};
+
+/**
+ * List API keys owned by the current user.
+ */
+export const apiKeysList = <ThrowOnError extends boolean = false>(
+  options?: Options<ApiKeysListData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<
+    ApiKeysListResponses,
+    ApiKeysListErrors,
+    ThrowOnError
+  >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/api-keys",
+    ...options,
+  });
+};
+
+/**
+ * Create one API key for the current user.
+ */
+export const apiKeyCreate = <ThrowOnError extends boolean = false>(
+  options: Options<ApiKeyCreateData, ThrowOnError>,
+) => {
+  return (options.client ?? client).post<
+    ApiKeyCreateResponses,
+    ApiKeyCreateErrors,
+    ThrowOnError
+  >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/api-keys",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+/**
+ * Delete one API key owned by the current user.
+ */
+export const apiKeyDelete = <ThrowOnError extends boolean = false>(
+  options: Options<ApiKeyDeleteData, ThrowOnError>,
+) => {
+  return (options.client ?? client).delete<
+    ApiKeyDeleteResponses,
+    ApiKeyDeleteErrors,
+    ThrowOnError
+  >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/api-keys/{api_key_id}",
+    ...options,
+  });
 };
 
 /**
@@ -107,6 +201,17 @@ export const meGet = <ThrowOnError extends boolean = false>(
     MeGetErrors,
     ThrowOnError
   >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
     url: "/auth/me",
     ...options,
   });
