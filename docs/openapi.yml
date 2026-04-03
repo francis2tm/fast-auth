@@ -13,15 +13,36 @@ paths:
       - auth
       summary: List API keys owned by the current user.
       operationId: api_keys_list
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum number of items to return.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
+      - name: offset
+        in: query
+        description: Number of items to skip from the result set.
+        required: false
+        schema:
+          type: integer
+          format: int32
+          minimum: 0
       responses:
         '200':
           description: ''
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ApiKeySummary'
+                $ref: '#/components/schemas/ListPageResult_ApiKeySummary'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
         '401':
           description: ''
           content:
@@ -580,6 +601,61 @@ components:
         message:
           type: string
           description: Success message.
+    ListPageResult_ApiKeySummary:
+      type: object
+      description: Shared page payload metadata plus returned items.
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            description: API key summary returned by list and delete endpoints.
+            required:
+            - id
+            - name
+            - key_prefix
+            - created_at
+            properties:
+              created_at:
+                type: string
+                format: date-time
+                description: Creation timestamp.
+              id:
+                type: string
+                format: uuid
+                description: API key identifier.
+              key_prefix:
+                type: string
+                description: Stable visible key prefix.
+              last_used_at:
+                type:
+                - string
+                - 'null'
+                format: date-time
+                description: Last successful use timestamp.
+              name:
+                type: string
+                description: User-defined display name.
+          description: Returned page items.
+        limit:
+          type: integer
+          format: int32
+          description: Applied page size.
+          minimum: 0
+        offset:
+          type: integer
+          format: int32
+          description: Applied page offset.
+          minimum: 0
+        total:
+          type: integer
+          format: int64
+          description: Total number of visible rows.
     PasswordForgotRequest:
       type: object
       description: Request body for forgot password.

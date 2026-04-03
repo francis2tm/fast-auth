@@ -51,6 +51,9 @@ pub enum AuthError {
     #[error("API key not found")]
     ApiKeyNotFound,
 
+    #[error("{0}")]
+    InvalidListPage(String),
+
     #[error("Password hashing error: {0}")]
     PasswordHash(String),
 
@@ -85,6 +88,7 @@ impl IntoResponse for AuthError {
             AuthError::WeakPassword(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::RefreshTokenInvalid => (StatusCode::UNAUTHORIZED, self.to_string()),
             AuthError::ApiKeyNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AuthError::InvalidListPage(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::PasswordHash(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Internal server error".to_string(),

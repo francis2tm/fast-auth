@@ -128,6 +128,49 @@ export type EmailConfirmSendResponse = {
 };
 
 /**
+ * Shared page payload metadata plus returned items.
+ */
+export type ListPageResultApiKeySummary = {
+  /**
+   * Returned page items.
+   */
+  items: Array<{
+    /**
+     * Creation timestamp.
+     */
+    created_at: string;
+    /**
+     * API key identifier.
+     */
+    id: string;
+    /**
+     * Stable visible key prefix.
+     */
+    key_prefix: string;
+    /**
+     * Last successful use timestamp.
+     */
+    last_used_at?: string | null;
+    /**
+     * User-defined display name.
+     */
+    name: string;
+  }>;
+  /**
+   * Applied page size.
+   */
+  limit: number;
+  /**
+   * Applied page offset.
+   */
+  offset: number;
+  /**
+   * Total number of visible rows.
+   */
+  total: number;
+};
+
+/**
  * Request body for forgot password.
  */
 export type PasswordForgotRequest = {
@@ -226,11 +269,21 @@ export type UserResponse = {
 export type ApiKeysListData = {
   body?: never;
   path?: never;
-  query?: never;
+  query?: {
+    /**
+     * Maximum number of items to return.
+     */
+    limit?: number;
+    /**
+     * Number of items to skip from the result set.
+     */
+    offset?: number;
+  };
   url: "/auth/api-keys";
 };
 
 export type ApiKeysListErrors = {
+  400: AuthErrorResponse;
   401: AuthErrorResponse;
   500: AuthErrorResponse;
 };
@@ -238,7 +291,7 @@ export type ApiKeysListErrors = {
 export type ApiKeysListError = ApiKeysListErrors[keyof ApiKeysListErrors];
 
 export type ApiKeysListResponses = {
-  200: Array<ApiKeySummary>;
+  200: ListPageResultApiKeySummary;
 };
 
 export type ApiKeysListResponse =

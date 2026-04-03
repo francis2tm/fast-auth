@@ -22,6 +22,7 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 
 ```rust,ignore
 use chrono::{DateTime, Utc};
+use common::list::{ListPageParams, ListPageResult};
 use fast_auth::{AuthBackend, AuthBackendError, AuthError, AuthUser};
 use thiserror::Error;
 use uuid::Uuid;
@@ -100,8 +101,12 @@ impl AuthBackend for MyBackend {
         Err(MyError::Unexpected("not implemented".to_string()))
     }
 
-    async fn api_keys_list(&self, _user_id: Uuid) -> Result<Vec<fast_auth::AuthApiKey>, Self::Error> {
-        Ok(Vec::new())
+    async fn api_keys_list(
+        &self,
+        _user_id: Uuid,
+        page: ListPageParams,
+    ) -> Result<ListPageResult<fast_auth::AuthApiKey>, Self::Error> {
+        Ok(page.result_build(Vec::new(), 0))
     }
 
     async fn api_key_delete(

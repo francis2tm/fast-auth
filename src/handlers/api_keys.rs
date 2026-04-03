@@ -6,10 +6,11 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{delete, post},
 };
 use chrono::{DateTime, Utc};
+use common::list::{ListPageParams, ListPageResult};
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
@@ -24,6 +25,7 @@ pub const API_KEYS_PATH: &str = "/auth/api-keys";
         ApiKeyCreateRequest,
         ApiKeyCreateResponse,
         ApiKeySummary,
+        ListPageResult<ApiKeySummary>,
         crate::error::AuthErrorResponse
     ))
 )]
@@ -143,9 +145,11 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 #[utoipa::path(
     get,
     path = "",
+    params(ListPageParams),
     security(("sessionCookie" = []), ("bearerApiKey" = [])),
     responses(
-        (status = OK, body = [ApiKeySummary]),
+        (status = OK, body = ListPageResult<ApiKeySummary>),
+        (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
         (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
@@ -153,13 +157,20 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,
-) -> Result<Json<Vec<ApiKeySummary>>, AuthError> {
+    Query(page): Query<ListPageParams>,
+) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
+    page.validate()
+        .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
     let api_keys = auth
         .backend()
-        .api_keys_list(current_user.user_id)
+        .api_keys_list(current_user.user_id, page)
         .await
         .map_err(AuthError::from_backend)?;
-    Ok(Json(api_keys.into_iter().map(Into::into).collect()))
+    Ok(Json(ListPageResult::new(
+        api_keys.items.into_iter().map(Into::into).collect(),
+        api_keys.total,
+        page,
+    )))
 }
 
 /// Delete one API key owned by the current user.

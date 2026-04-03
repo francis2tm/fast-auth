@@ -4,6 +4,7 @@
 //! and persistence layer.
 
 use chrono::{DateTime, Utc};
+use common::list::{ListPageParams, ListPageResult};
 use serde::Serialize;
 use std::future::Future;
 use utoipa::ToSchema;
@@ -191,11 +192,12 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         key_hash: &str,
     ) -> impl Future<Output = Result<AuthApiKey, Self::Error>> + Send;
 
-    /// Lists all API keys owned by a user.
+    /// Lists one paginated API-key window owned by a user.
     fn api_keys_list(
         &self,
         user_id: Uuid,
-    ) -> impl Future<Output = Result<Vec<AuthApiKey>, Self::Error>> + Send;
+        page: ListPageParams,
+    ) -> impl Future<Output = Result<ListPageResult<AuthApiKey>, Self::Error>> + Send;
 
     /// Deletes one owned API key.
     fn api_key_delete(
