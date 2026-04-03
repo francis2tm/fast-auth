@@ -10,7 +10,7 @@ use axum::{
     routing::{delete, post},
 };
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult, ListSortOrder};
+use common::list::{ListPageParams, ListPageResult, ListQuery, ListSortOrder};
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
@@ -87,18 +87,7 @@ pub struct ApiKeyCreateResponse {
 }
 
 /// Query parameters for API-key listing.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct ApiKeyListQuery {
-    /// Shared pagination window.
-    #[serde(flatten)]
-    pub page: ListPageParams,
-    /// Column used for sorting.
-    #[serde(default)]
-    pub sort_by: AuthApiKeyListSortBy,
-    /// Sort direction.
-    #[serde(default)]
-    pub sort_order: ListSortOrder,
-}
+pub type ApiKeyListQuery = ListQuery<AuthApiKeyListSortBy>;
 
 impl From<AuthApiKey> for ApiKeySummary {
     fn from(value: AuthApiKey) -> Self {
@@ -180,23 +169,16 @@ pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
     Query(query): Query<ApiKeyListQuery>,
 ) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
     query
-        .page
         .validate()
         .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
     let api_keys = auth
         .backend()
-        .api_keys_list(
-            current_user.user_id,
-            query.page,
-            query.sort_by,
-            query.sort_order,
-        )
+        .api_keys_list(current_user.user_id, query)
         .await
         .map_err(AuthError::from_backend)?;
-    Ok(Json(ListPageResult::new(
+    Ok(Json(query.result_build(
         api_keys.items.into_iter().map(Into::into).collect(),
         api_keys.total,
-        query.page,
     )))
 }
 

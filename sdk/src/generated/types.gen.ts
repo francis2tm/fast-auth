@@ -71,6 +71,11 @@ export type ApiKeySummary = {
 };
 
 /**
+ * Sortable columns for API-key listing.
+ */
+export type AuthApiKeyListSortBy = "created_at" | "name" | "last_used_at";
+
+/**
  * Auth response body. Tokens are set as httpOnly cookies.
  */
 export type AuthCookieResponse = {
@@ -169,6 +174,11 @@ export type ListPageResultApiKeySummary = {
    */
   total: number;
 };
+
+/**
+ * Shared sort direction for list endpoints.
+ */
+export type ListSortOrder = "asc" | "desc";
 
 /**
  * Request body for forgot password.
@@ -278,6 +288,14 @@ export type ApiKeysListData = {
      * Number of items to skip from the result set.
      */
     offset?: number;
+    /**
+     * Column used for sorting.
+     */
+    sort_by?: AuthApiKeyListSortBy;
+    /**
+     * Sort direction.
+     */
+    sort_order?: ListSortOrder;
   };
   url: "/auth/api-keys";
 };

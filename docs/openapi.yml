@@ -15,17 +15,17 @@ paths:
       operationId: api_keys_list
       parameters:
       - name: limit
-        in: path
+        in: query
         description: Maximum number of items to return.
-        required: true
+        required: false
         schema:
           type: integer
           format: int32
           minimum: 0
       - name: offset
-        in: path
+        in: query
         description: Number of items to skip from the result set.
-        required: true
+        required: false
         schema:
           type: integer
           format: int32

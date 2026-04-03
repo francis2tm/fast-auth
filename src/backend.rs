@@ -4,7 +4,7 @@
 //! and persistence layer.
 
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult, ListSortOrder};
+use common::list::{ListPageResult, ListQuery};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use utoipa::ToSchema;
@@ -209,9 +209,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     fn api_keys_list(
         &self,
         user_id: Uuid,
-        page: ListPageParams,
-        sort_by: AuthApiKeyListSortBy,
-        sort_order: ListSortOrder,
+        query: ListQuery<AuthApiKeyListSortBy>,
     ) -> impl Future<Output = Result<ListPageResult<AuthApiKey>, Self::Error>> + Send;
 
     /// Deletes one owned API key.

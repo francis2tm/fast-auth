@@ -129,6 +129,7 @@ pub fn openapi_yaml_write_default() -> Result<PathBuf, OpenApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
 
     #[test]
     fn openapi_yaml_generate_includes_auth_paths() {
@@ -136,5 +137,28 @@ mod tests {
         assert!(yaml.contains("/auth/refresh"));
         assert!(yaml.contains("/auth/sign-in"));
         assert!(yaml.contains("/auth/sign-up"));
+    }
+
+    #[test]
+    fn openapi_yaml_generate_uses_shared_list_contract() {
+        let yaml = openapi_yaml_generate().expect("openapi yaml");
+        let spec: Value = serde_yaml::from_str(&yaml).expect("parse yaml");
+        let operation = &spec["paths"]["/auth/api-keys"]["get"];
+        let response_ref =
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .expect("api key list response ref");
+        assert!(response_ref.contains("ListPageResult_"));
+
+        let params = operation["parameters"]
+            .as_sequence()
+            .expect("api key list params");
+        let param_names = params
+            .iter()
+            .filter_map(|param| param["name"].as_str())
+            .collect::<Vec<_>>();
+        for expected in ["limit", "offset", "sort_by", "sort_order"] {
+            assert!(param_names.contains(&expected), "missing {expected}");
+        }
     }
 }
