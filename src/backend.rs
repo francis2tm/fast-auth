@@ -4,8 +4,8 @@
 //! and persistence layer.
 
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult};
-use serde::Serialize;
+use common::list::{ListPageParams, ListPageResult, ListSortOrder};
+use serde::{Deserialize, Serialize};
 use std::future::Future;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -83,6 +83,19 @@ pub struct AuthApiKey {
     pub created_at: DateTime<Utc>,
     /// Last successful use timestamp.
     pub last_used_at: Option<DateTime<Utc>>,
+}
+
+/// Sortable columns for API-key listing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthApiKeyListSortBy {
+    /// Sort by API-key creation timestamp.
+    #[default]
+    CreatedAt,
+    /// Sort by API-key display name.
+    Name,
+    /// Sort by the most recent successful use timestamp.
+    LastUsedAt,
 }
 
 /// API key creation result returned only at creation time.
@@ -197,6 +210,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         &self,
         user_id: Uuid,
         page: ListPageParams,
+        sort_by: AuthApiKeyListSortBy,
+        sort_order: ListSortOrder,
     ) -> impl Future<Output = Result<ListPageResult<AuthApiKey>, Self::Error>> + Send;
 
     /// Deletes one owned API key.

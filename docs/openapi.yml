@@ -15,21 +15,33 @@ paths:
       operationId: api_keys_list
       parameters:
       - name: limit
-        in: query
+        in: path
         description: Maximum number of items to return.
-        required: false
+        required: true
         schema:
           type: integer
           format: int32
           minimum: 0
       - name: offset
-        in: query
+        in: path
         description: Number of items to skip from the result set.
-        required: false
+        required: true
         schema:
           type: integer
           format: int32
           minimum: 0
+      - name: sort_by
+        in: query
+        description: Column used for sorting.
+        required: false
+        schema:
+          $ref: '#/components/schemas/AuthApiKeyListSortBy'
+      - name: sort_order
+        in: query
+        description: Sort direction.
+        required: false
+        schema:
+          $ref: '#/components/schemas/ListSortOrder'
       responses:
         '200':
           description: ''
@@ -548,6 +560,13 @@ components:
         name:
           type: string
           description: User-defined display name.
+    AuthApiKeyListSortBy:
+      type: string
+      description: Sortable columns for API-key listing.
+      enum:
+      - created_at
+      - name
+      - last_used_at
     AuthCookieResponse:
       type: object
       description: Auth response body. Tokens are set as httpOnly cookies.
@@ -656,6 +675,12 @@ components:
           type: integer
           format: int64
           description: Total number of visible rows.
+    ListSortOrder:
+      type: string
+      description: Shared sort direction for list endpoints.
+      enum:
+      - asc
+      - desc
     PasswordForgotRequest:
       type: object
       description: Request body for forgot password.

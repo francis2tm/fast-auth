@@ -1,8 +1,8 @@
 //! Handlers for user API key management.
 
 use crate::{
-    Auth, AuthApiKey, AuthApiKeyWithSecret, AuthBackend, AuthHooks, CurrentUser, EmailSender,
-    api_key_issue, error::AuthError,
+    Auth, AuthApiKey, AuthApiKeyListSortBy, AuthApiKeyWithSecret, AuthBackend, AuthHooks,
+    CurrentUser, EmailSender, api_key_issue, error::AuthError,
 };
 use axum::{
     Json, Router,
@@ -10,7 +10,7 @@ use axum::{
     routing::{delete, post},
 };
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult};
+use common::list::{ListPageParams, ListPageResult, ListSortOrder};
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
@@ -24,6 +24,8 @@ pub const API_KEYS_PATH: &str = "/auth/api-keys";
     components(schemas(
         ApiKeyCreateRequest,
         ApiKeyCreateResponse,
+        AuthApiKeyListSortBy,
+        ListSortOrder,
         ApiKeySummary,
         ListPageResult<ApiKeySummary>,
         crate::error::AuthErrorResponse
@@ -82,6 +84,20 @@ pub struct ApiKeyCreateResponse {
     pub created_at: DateTime<Utc>,
     /// Last successful use timestamp.
     pub last_used_at: Option<DateTime<Utc>>,
+}
+
+/// Query parameters for API-key listing.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ApiKeyListQuery {
+    /// Shared pagination window.
+    #[serde(flatten)]
+    pub page: ListPageParams,
+    /// Column used for sorting.
+    #[serde(default)]
+    pub sort_by: AuthApiKeyListSortBy,
+    /// Sort direction.
+    #[serde(default)]
+    pub sort_order: ListSortOrder,
 }
 
 impl From<AuthApiKey> for ApiKeySummary {
@@ -145,7 +161,11 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 #[utoipa::path(
     get,
     path = "",
-    params(ListPageParams),
+    params(
+        ListPageParams,
+        ("sort_by" = Option<AuthApiKeyListSortBy>, Query, description = "Column used for sorting."),
+        ("sort_order" = Option<ListSortOrder>, Query, description = "Sort direction.")
+    ),
     security(("sessionCookie" = []), ("bearerApiKey" = [])),
     responses(
         (status = OK, body = ListPageResult<ApiKeySummary>),
@@ -157,19 +177,26 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,
-    Query(page): Query<ListPageParams>,
+    Query(query): Query<ApiKeyListQuery>,
 ) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
-    page.validate()
+    query
+        .page
+        .validate()
         .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
     let api_keys = auth
         .backend()
-        .api_keys_list(current_user.user_id, page)
+        .api_keys_list(
+            current_user.user_id,
+            query.page,
+            query.sort_by,
+            query.sort_order,
+        )
         .await
         .map_err(AuthError::from_backend)?;
     Ok(Json(ListPageResult::new(
         api_keys.items.into_iter().map(Into::into).collect(),
         api_keys.total,
-        page,
+        query.page,
     )))
 }
 

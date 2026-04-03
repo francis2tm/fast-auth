@@ -48,12 +48,16 @@ mod verification_email;
 
 pub use api_key::{api_key_generate, api_key_hash, api_key_issue, api_key_prefix_extract};
 use axum::Router;
-pub use backend::{AuthApiKey, AuthApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser};
+pub use backend::{
+    AuthApiKey, AuthApiKeyListSortBy, AuthApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser,
+};
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
 pub use extractors::CurrentUser;
-pub use handlers::api_keys::{ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeySummary};
+pub use handlers::api_keys::{
+    ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyListQuery, ApiKeySummary,
+};
 pub use handlers::sign_in::SignInRequest;
 pub use handlers::sign_out::SignOutResponse;
 pub use handlers::sign_up::SignUpRequest;

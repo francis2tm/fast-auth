@@ -22,7 +22,7 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 
 ```rust,ignore
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult};
+use common::list::{ListPageParams, ListPageResult, ListSortOrder};
 use fast_auth::{AuthBackend, AuthBackendError, AuthError, AuthUser};
 use thiserror::Error;
 use uuid::Uuid;
@@ -105,6 +105,8 @@ impl AuthBackend for MyBackend {
         &self,
         _user_id: Uuid,
         page: ListPageParams,
+        _sort_by: fast_auth::AuthApiKeyListSortBy,
+        _sort_order: ListSortOrder,
     ) -> Result<ListPageResult<fast_auth::AuthApiKey>, Self::Error> {
         Ok(page.result_build(Vec::new(), 0))
     }
