@@ -10,7 +10,7 @@ use axum::{
     routing::{delete, post},
 };
 use chrono::{DateTime, Utc};
-use common::list::{ListPageParams, ListPageResult, ListQuery, ListSortOrder};
+use common::list::{ListPageResult, ListQuery, ListSortOrder};
 use serde::{Deserialize, Serialize};
 use utoipa::{OpenApi, ToSchema};
 use uuid::Uuid;
@@ -86,8 +86,7 @@ pub struct ApiKeyCreateResponse {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-/// Query parameters for API-key listing.
-pub type ApiKeyListQuery = ListQuery<AuthApiKeyListSortBy>;
+common::list_query_params_type!(pub ApiKeyListQuery, AuthApiKeyListSortBy);
 
 impl From<AuthApiKey> for ApiKeySummary {
     fn from(value: AuthApiKey) -> Self {
@@ -150,11 +149,7 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 #[utoipa::path(
     get,
     path = "",
-    params(
-        ListPageParams,
-        ("sort_by" = Option<AuthApiKeyListSortBy>, Query, description = "Column used for sorting."),
-        ("sort_order" = Option<ListSortOrder>, Query, description = "Sort direction.")
-    ),
+    params(ApiKeyListQuery),
     security(("sessionCookie" = []), ("bearerApiKey" = [])),
     responses(
         (status = OK, body = ListPageResult<ApiKeySummary>),
@@ -168,6 +163,7 @@ pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
     State(auth): State<Auth<B, H, E>>,
     Query(query): Query<ApiKeyListQuery>,
 ) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
+    let query: ListQuery<AuthApiKeyListSortBy> = query.into();
     query
         .validate()
         .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
