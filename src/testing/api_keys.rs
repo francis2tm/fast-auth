@@ -25,12 +25,13 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
     assert_eq!(list_response.status(), StatusCode::OK);
 
     let listed: serde_json::Value = list_response.json().await.expect("list json");
-    assert_eq!(listed.as_array().expect("array").len(), 1);
+    let listed_items = listed["items"].as_array().expect("items array");
+    assert_eq!(listed_items.len(), 1);
     assert!(
-        listed[0].get("key").is_none(),
+        listed_items[0].get("key").is_none(),
         "list must not leak plaintext key"
     );
-    assert!(listed[0]["last_used_at"].is_null());
+    assert!(listed_items[0]["last_used_at"].is_null());
 
     let me_response = client
         .get(format!("{base_url}{ME_PATH}"))
@@ -48,9 +49,10 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
         .expect("list used api keys");
 
     let used: serde_json::Value = used_response.json().await.expect("used json");
-    let api_key_id = used[0]["id"].as_str().expect("api key id").to_string();
+    let used_items = used["items"].as_array().expect("items array");
+    let api_key_id = used_items[0]["id"].as_str().expect("api key id").to_string();
     assert!(
-        used[0]["last_used_at"].as_str().is_some(),
+        used_items[0]["last_used_at"].as_str().is_some(),
         "successful bearer auth should update last_used_at"
     );
 
@@ -70,7 +72,7 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
         .expect("list deleted api keys");
 
     let deleted: serde_json::Value = deleted_response.json().await.expect("deleted json");
-    assert_eq!(deleted.as_array().expect("array").len(), 0);
+    assert_eq!(deleted["items"].as_array().expect("items array").len(), 0);
 
     let deleted_me = client
         .get(format!("{base_url}{ME_PATH}"))
