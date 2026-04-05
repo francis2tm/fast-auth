@@ -41,6 +41,7 @@ reqwest = { version = "0", features = ["json"], optional = true }
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 
 [dev-dependencies]
+common = { path = "../common", features = ["testing"] }
 test-utils = { version = "0", path = "../test-utils" }
 serial_test = "3"
 tower = { version = "0", features = ["util"] }

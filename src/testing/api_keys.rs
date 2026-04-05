@@ -50,7 +50,10 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
 
     let used: serde_json::Value = used_response.json().await.expect("used json");
     let used_items = used["items"].as_array().expect("items array");
-    let api_key_id = used_items[0]["id"].as_str().expect("api key id").to_string();
+    let api_key_id = used_items[0]["id"]
+        .as_str()
+        .expect("api key id")
+        .to_string();
     assert!(
         used_items[0]["last_used_at"].as_str().is_some(),
         "successful bearer auth should update last_used_at"
