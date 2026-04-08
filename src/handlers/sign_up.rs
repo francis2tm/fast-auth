@@ -1,7 +1,8 @@
 //! Handler for user sign-up.
 
 use crate::{
-    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, EmailSender, UserResponse,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, auth_response_build,
+    auth_response_with_cookies_build,
     email::email_validate_normalize,
     error::AuthError,
     password::{password_hash, password_validate},
@@ -22,17 +23,12 @@ pub const SIGN_UP_PATH: &str = "/auth/sign-up";
 #[derive(OpenApi)]
 #[openapi(
     paths(sign_up),
-    components(schemas(
-        SignUpRequest,
-        crate::AuthCookieResponse,
-        crate::error::AuthErrorResponse
-    ))
+    components(schemas(SignUpRequest, crate::AuthResponse, crate::error::AuthErrorResponse))
 )]
 pub(crate) struct SignUpApi;
 
 /// Returns routes for the /auth/sign-up endpoint.
-pub fn sign_up_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn sign_up_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>> {
     Router::new().route(SIGN_UP_PATH, post(sign_up::<B, H, E>))
 }
 
@@ -56,13 +52,13 @@ pub struct SignUpRequest {
     path = "",
     request_body = SignUpRequest,
     responses(
-        (status = OK, body = crate::AuthCookieResponse),
+        (status = OK, body = crate::AuthResponse),
         (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
         (status = CONFLICT, body = crate::error::AuthErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn sign_up<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignUpRequest>,
 ) -> Result<Response, AuthError> {
@@ -84,20 +80,14 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         .await
         .map_err(AuthError::from_backend)?;
 
-    // Call the on_sign_up hook
-    auth.hooks().on_sign_up(&user).await;
+    let current_user = auth
+        .backend()
+        .current_user_get_by_user_id(user.id())
+        .await
+        .map_err(AuthError::from_backend)?
+        .ok_or(AuthError::UserNotFound)?;
 
-    // Build response with user information
-    let user_response = UserResponse {
-        id: user.id().to_string(),
-        email: user.email().to_owned(),
-        email_confirmed_at: user.email_confirmed_at().map(|dt| dt.to_rfc3339()),
-        created_at: user.created_at().to_rfc3339(),
-    };
-
-    let response_body = AuthCookieResponse {
-        user: user_response,
-    };
+    auth.hooks().on_sign_up(&current_user).await;
 
     // If email confirmation is required, do not set cookies until email is confirmed
     if config.email_confirmation_require && user.email_confirmed_at().is_none() {
@@ -108,10 +98,10 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
                 "Failed to issue confirmation token during sign-up"
             );
         }
-        return Ok(Json(response_body).into_response());
+        return Ok(Json(auth_response_build(&current_user)?).into_response());
     }
 
     // Generate tokens and cookies
-    let jar = token_cookies_generate(&auth, user.id(), user.email()).await?;
-    Ok((jar, Json(response_body)).into_response())
+    let jar = token_cookies_generate(&auth, &current_user).await?;
+    auth_response_with_cookies_build(jar, &current_user)
 }

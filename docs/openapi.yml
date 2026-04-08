@@ -17,29 +17,32 @@ paths:
       - name: limit
         in: query
         description: Maximum number of items to return.
-        required: false
+        required: true
         schema:
           type: integer
           format: int32
-          minimum: 0
+          default: 20
+          maximum: 100
+          minimum: 1
       - name: offset
         in: query
         description: Number of items to skip from the result set.
-        required: false
+        required: true
         schema:
           type: integer
           format: int32
+          default: 0
           minimum: 0
       - name: sort_by
         in: query
         description: Column used for sorting.
-        required: false
+        required: true
         schema:
-          $ref: '#/components/schemas/AuthApiKeyListSortBy'
+          $ref: '#/components/schemas/ApiKeyListSortBy'
       - name: sort_order
         in: query
         description: Sort direction.
-        required: false
+        required: true
         schema:
           $ref: '#/components/schemas/ListSortOrder'
       responses:
@@ -73,7 +76,7 @@ paths:
     post:
       tags:
       - auth
-      summary: Create one API key for the current user.
+      summary: Create one API key for the current organization.
       operationId: api_key_create
       requestBody:
         content:
@@ -224,7 +227,7 @@ paths:
       summary: Get current authenticated user.
       description: |-
         Returns the current user's information from the JWT token.
-        Queries the database to get fresh user data including email_confirmed_at and created_at.
+        Queries the database to get fresh user data including email confirmation state.
 
         # Requires
         - Valid JWT access token (httpOnly cookie)
@@ -237,7 +240,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/AuthResponse'
         '401':
           description: ''
           content:
@@ -256,6 +259,289 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations:
+    get:
+      tags:
+      - auth
+      operationId: organizations_list
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    post:
+      tags:
+      - auth
+      operationId: organizations_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreateRequest'
+        required: true
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/current:
+    post:
+      tags:
+      - auth
+      operationId: organizations_switch
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationSwitchRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/invites/accept:
+    post:
+      tags:
+      - auth
+      operationId: organization_invite_accept
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationInviteAcceptRequest'
+        required: true
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '401':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '404':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+        '500':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthErrorResponse'
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/{organization_id}:
+    get:
+      tags:
+      - auth
+      operationId: organizations_get
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    delete:
+      tags:
+      - auth
+      operationId: organizations_delete
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    patch:
+      tags:
+      - auth
+      operationId: organizations_update
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdateRequest'
+        required: true
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/{organization_id}/invites:
+    get:
+      tags:
+      - auth
+      operationId: organization_invites_list
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    post:
+      tags:
+      - auth
+      operationId: organization_invite_create
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationInviteCreateRequest'
+        required: true
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/{organization_id}/invites/{invite_id}:
+    delete:
+      tags:
+      - auth
+      operationId: organization_invite_revoke
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: invite_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/{organization_id}/members:
+    get:
+      tags:
+      - auth
+      operationId: organization_members_list
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+  /auth/organizations/{organization_id}/members/{member_user_id}:
+    delete:
+      tags:
+      - auth
+      operationId: organization_member_delete
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: member_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses: {}
+      security:
+      - sessionCookie: []
+      - bearerApiKey: []
+    patch:
+      tags:
+      - auth
+      operationId: organization_member_update
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: member_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationRoleUpdateRequest'
+        required: true
+      responses: {}
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -345,7 +631,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthCookieResponse'
+                $ref: '#/components/schemas/AuthResponse'
         '401':
           description: ''
           content:
@@ -388,7 +674,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthCookieResponse'
+                $ref: '#/components/schemas/AuthResponse'
         '400':
           description: ''
           content:
@@ -468,7 +754,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthCookieResponse'
+                $ref: '#/components/schemas/AuthResponse'
         '400':
           description: ''
           content:
@@ -504,7 +790,9 @@ components:
       required:
       - id
       - name
+      - organization_id
       - key
+      - created_by_user_id
       - key_prefix
       - created_at
       properties:
@@ -512,6 +800,10 @@ components:
           type: string
           format: date-time
           description: Creation timestamp.
+        created_by_user_id:
+          type: string
+          format: uuid
+          description: User id that created the key.
         id:
           type: string
           format: uuid
@@ -531,19 +823,36 @@ components:
         name:
           type: string
           description: User-defined display name.
+        organization_id:
+          type: string
+          format: uuid
+          description: Owning organization id.
+    ApiKeyListSortBy:
+      type: string
+      description: Sortable columns for API-key listing.
+      enum:
+      - created_at
+      - name
+      - last_used_at
     ApiKeySummary:
       type: object
       description: API key summary returned by list and delete endpoints.
       required:
       - id
       - name
+      - organization_id
       - key_prefix
+      - created_by_user_id
       - created_at
       properties:
         created_at:
           type: string
           format: date-time
           description: Creation timestamp.
+        created_by_user_id:
+          type: string
+          format: uuid
+          description: User id that created the key.
         id:
           type: string
           format: uuid
@@ -560,21 +869,10 @@ components:
         name:
           type: string
           description: User-defined display name.
-    AuthApiKeyListSortBy:
-      type: string
-      description: Sortable columns for API-key listing.
-      enum:
-      - created_at
-      - name
-      - last_used_at
-    AuthCookieResponse:
-      type: object
-      description: Auth response body. Tokens are set as httpOnly cookies.
-      required:
-      - user
-      properties:
-        user:
-          $ref: '#/components/schemas/UserResponse'
+        organization_id:
+          type: string
+          format: uuid
+          description: Owning organization id.
     AuthErrorResponse:
       type: object
       description: Standard error response body returned by auth endpoints.
@@ -584,6 +882,20 @@ components:
         error:
           type: string
           description: Human-readable error message.
+    AuthResponse:
+      type: object
+      description: Auth response body. Tokens are set as httpOnly cookies.
+      required:
+      - user
+      - organization
+      - auth_role
+      properties:
+        auth_role:
+          type: string
+        organization:
+          $ref: '#/components/schemas/OrganizationResponse'
+        user:
+          $ref: '#/components/schemas/UserResponse'
     EmailConfirmQuery:
       type: object
       description: Query for browser-based email confirmation links.
@@ -637,13 +949,19 @@ components:
             required:
             - id
             - name
+            - organization_id
             - key_prefix
+            - created_by_user_id
             - created_at
             properties:
               created_at:
                 type: string
                 format: date-time
                 description: Creation timestamp.
+              created_by_user_id:
+                type: string
+                format: uuid
+                description: User id that created the key.
               id:
                 type: string
                 format: uuid
@@ -660,12 +978,17 @@ components:
               name:
                 type: string
                 description: User-defined display name.
+              organization_id:
+                type: string
+                format: uuid
+                description: Owning organization id.
           description: Returned page items.
         limit:
           type: integer
           format: int32
           description: Applied page size.
-          minimum: 0
+          maximum: 100
+          minimum: 1
         offset:
           type: integer
           format: int32
@@ -681,6 +1004,221 @@ components:
       enum:
       - asc
       - desc
+    Organization:
+      type: object
+      description: |-
+        Organization summary exposed by auth.
+
+        This is the storage-agnostic organization shape returned by backend methods
+        and exposed by organization endpoints.
+      required:
+      - id
+      - name
+      - created_at
+      - updated_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Organization creation timestamp.
+        id:
+          type: string
+          format: uuid
+          description: Stable organization identifier.
+        name:
+          type: string
+          description: Human-readable organization name.
+        updated_at:
+          type: string
+          format: date-time
+          description: Most recent organization update timestamp.
+    OrganizationCreateRequest:
+      type: object
+      description: Organization create request.
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          description: Organization name.
+    OrganizationInvite:
+      type: object
+      description: |-
+        Organization invitation metadata.
+
+        This is the persisted invitation state returned by list, revoke, and accept
+        flows. The plaintext invite token is intentionally excluded here and is only
+        available through [`OrganizationInviteWithSecret`] at creation time.
+      required:
+      - id
+      - organization_id
+      - organization_name
+      - email
+      - role
+      - invited_by_user_id
+      - created_at
+      properties:
+        accepted_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Acceptance timestamp, when the invite has been accepted.
+        created_at:
+          type: string
+          format: date-time
+          description: Invitation creation timestamp.
+        email:
+          type: string
+          description: Email address the invitation targets.
+        id:
+          type: string
+          format: uuid
+          description: Stable invitation identifier.
+        invited_by_user_id:
+          type: string
+          format: uuid
+          description: User identifier of the inviter.
+        organization_id:
+          type: string
+          format: uuid
+          description: Target organization identifier.
+        organization_name:
+          type: string
+          description: Human-readable target organization name.
+        revoked_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+          description: Revocation timestamp, when the invite has been revoked.
+        role:
+          $ref: '#/components/schemas/OrganizationRole'
+          description: Role that will be granted if the invite is accepted.
+    OrganizationInviteAcceptRequest:
+      type: object
+      description: Invitation accept request.
+      required:
+      - token
+      properties:
+        token:
+          type: string
+          description: Plaintext invitation token.
+    OrganizationInviteCreateRequest:
+      type: object
+      description: Invitation create request.
+      required:
+      - email
+      - role
+      properties:
+        email:
+          type: string
+          description: Invited email.
+        role:
+          $ref: '#/components/schemas/OrganizationRole'
+          description: Invited role.
+    OrganizationInviteWithSecret:
+      allOf:
+      - $ref: '#/components/schemas/OrganizationInvite'
+        description: Persisted invitation metadata.
+      - type: object
+        required:
+        - token
+        properties:
+          token:
+            type: string
+            description: Plaintext invitation token returned once at creation time.
+      description: |-
+        Invitation creation result that includes the one-time plaintext token.
+
+        The plaintext `token` is returned only once so callers can deliver it to
+        the invited user. Later reads should use [`OrganizationInvite`] instead.
+    OrganizationMember:
+      type: object
+      description: |-
+        Organization membership summary exposed by auth.
+
+        Backends return this when listing memberships or members so handlers can
+        expose both the organization metadata and the caller-visible membership role
+        in one payload.
+      required:
+      - organization
+      - user_id
+      - email
+      - role
+      - created_at
+      properties:
+        created_at:
+          type: string
+          format: date-time
+          description: Membership creation timestamp.
+        email:
+          type: string
+          description: Member email address.
+        organization:
+          $ref: '#/components/schemas/Organization'
+          description: Organization visible through this membership.
+        role:
+          $ref: '#/components/schemas/OrganizationRole'
+          description: Role granted inside the organization.
+        user_id:
+          type: string
+          format: uuid
+          description: Member user identifier.
+    OrganizationResponse:
+      type: object
+      description: Active organization returned in auth responses.
+      required:
+      - id
+      - name
+      - role
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/OrganizationRole'
+    OrganizationRole:
+      type: string
+      description: |-
+        Organization membership role exposed by auth.
+
+        This role is embedded in [`CurrentUser`], organization membership responses,
+        and invitations so backends and HTTP handlers can share one stable
+        authorization vocabulary.
+      enum:
+      - owner
+      - admin
+      - member
+    OrganizationRoleUpdateRequest:
+      type: object
+      description: Membership role update request.
+      required:
+      - role
+      properties:
+        role:
+          $ref: '#/components/schemas/OrganizationRole'
+          description: New organization role.
+    OrganizationSwitchRequest:
+      type: object
+      description: Active organization switch request.
+      required:
+      - organization_id
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+          description: Next active organization id.
+    OrganizationUpdateRequest:
+      type: object
+      description: Organization update request.
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          description: Updated organization name.
     PasswordForgotRequest:
       type: object
       description: Request body for forgot password.
@@ -766,10 +1304,7 @@ components:
       required:
       - id
       - email
-      - created_at
       properties:
-        created_at:
-          type: string
         email:
           type: string
         email_confirmed_at:

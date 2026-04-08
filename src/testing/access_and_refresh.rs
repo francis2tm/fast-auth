@@ -7,14 +7,15 @@ use reqwest::{StatusCode, header};
 
 use crate::AuthBackend;
 use crate::AuthBackendError;
-use crate::AuthCookieResponse;
 use crate::AuthError;
+use crate::AuthResponse;
+use crate::OrganizationRole;
 use crate::handlers::{ME_PATH, REFRESH_PATH};
 use crate::tokens::{
     AccessTokenClaims, token_expiry_calculate, token_hash_sha256, token_with_hash_generate,
 };
 
-use super::{TestContext, TestUser};
+use super::{TestContext, TestUser, auth_response_assert};
 
 /// Create an expired access token for testing.
 fn create_expired_access_token(user_id: &str, email: &str, config: &crate::AuthConfig) -> String {
@@ -29,6 +30,8 @@ fn create_expired_access_token(user_id: &str, email: &str, config: &crate::AuthC
         aud: config.jwt_audience.clone(),
         role: "authenticated".to_string(),
         email: email.to_string(),
+        organization_id: uuid::Uuid::nil().to_string(),
+        organization_role: OrganizationRole::Owner,
     };
 
     encode(
@@ -160,8 +163,8 @@ pub async fn refresh_endpoint_accepts_valid_refresh_token<C: TestContext>() {
     );
 
     let body = response.bytes().await.unwrap();
-    let payload: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(payload.user.email, user.email);
+    let payload: AuthResponse = serde_json::from_slice(&body).unwrap();
+    auth_response_assert(&payload, &user.email, OrganizationRole::Owner);
 }
 
 /// Expired refresh tokens must be rejected without emitting cookies.

@@ -29,8 +29,8 @@ pub const EMAIL_CONFIRM_PATH: &str = "/auth/email/confirm";
 pub(crate) struct EmailConfirmApi;
 
 /// Returns routes for email confirmation endpoints.
-pub fn email_confirm_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn email_confirm_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>>
+{
     Router::new()
         .route(EMAIL_CONFIRM_SEND_PATH, post(email_confirm_send::<B, H, E>))
         .route(EMAIL_CONFIRM_PATH, get(email_confirm_get::<B, H, E>))
@@ -78,7 +78,7 @@ pub struct EmailConfirmResponse {
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<EmailConfirmSendRequest>,
 ) -> Result<Json<EmailConfirmSendResponse>, AuthError> {
@@ -115,7 +115,7 @@ pub async fn email_confirm_send<B: AuthBackend, H: AuthHooks<B::User>, E: EmailS
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn email_confirm_get<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn email_confirm_get<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Query(req): Query<EmailConfirmQuery>,
 ) -> Result<Json<EmailConfirmResponse>, AuthError> {

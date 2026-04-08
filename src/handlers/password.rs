@@ -30,8 +30,8 @@ pub const PASSWORD_RESET_PATH: &str = "/auth/password/reset";
 pub(crate) struct PasswordApi;
 
 /// Returns routes for password reset endpoints.
-pub fn password_reset_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn password_reset_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>>
+{
     Router::new()
         .route(PASSWORD_FORGOT_PATH, post(password_forgot::<B, H, E>))
         .route(PASSWORD_RESET_PATH, post(password_reset::<B, H, E>))
@@ -81,7 +81,7 @@ pub struct PasswordResetResponse {
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn password_forgot<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordForgotRequest>,
 ) -> Result<Json<PasswordForgotResponse>, AuthError> {
@@ -150,7 +150,7 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSend
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn password_reset<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<PasswordResetRequest>,
 ) -> Result<Json<PasswordResetResponse>, AuthError> {
@@ -168,7 +168,7 @@ pub async fn password_reset<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
 /// updates the user's password hash, and revokes all active refresh sessions.
 ///
 /// Returns [`AuthError::InvalidToken`] when the token is invalid, expired, or already used.
-async fn password_reset_apply<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+async fn password_reset_apply<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     auth: &Auth<B, H, E>,
     token: &str,
     password: &str,

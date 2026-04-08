@@ -47,16 +47,26 @@ pub mod verification;
 mod verification_email;
 
 pub use api_key::{api_key_generate, api_key_hash, api_key_issue, api_key_prefix_extract};
-use axum::Router;
+use axum::{
+    Json, Router,
+    response::{IntoResponse, Response},
+};
+use axum_extra::extract::cookie::CookieJar;
 pub use backend::{
-    AuthApiKey, AuthApiKeyListSortBy, AuthApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser,
+    ApiKey, ApiKeyListSortBy, ApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser,
+    Organization, OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember,
+    OrganizationRole,
 };
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
-pub use extractors::CurrentUser;
+pub use extractors::{CurrentAdmin, CurrentOwner, CurrentUser};
 pub use handlers::api_keys::{
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyListQuery, ApiKeySummary,
+};
+pub use handlers::organizations::{
+    OrganizationCreateRequest, OrganizationInviteAcceptRequest, OrganizationInviteCreateRequest,
+    OrganizationRoleUpdateRequest, OrganizationSwitchRequest, OrganizationUpdateRequest,
 };
 pub use handlers::sign_in::SignInRequest;
 pub use handlers::sign_out::SignOutResponse;
@@ -73,48 +83,90 @@ pub struct UserResponse {
     pub id: String,
     pub email: String,
     pub email_confirmed_at: Option<String>,
-    pub created_at: String,
+}
+
+/// Active organization returned in auth responses.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct OrganizationResponse {
+    pub id: String,
+    pub name: String,
+    pub role: OrganizationRole,
 }
 
 /// Auth response body. Tokens are set as httpOnly cookies.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct AuthCookieResponse {
+pub struct AuthResponse {
     pub user: UserResponse,
+    pub organization: OrganizationResponse,
+    pub auth_role: String,
+}
+
+/// Return one required resolved current-user field or one internal auth error.
+fn current_user_field_require<T>(value: Option<T>, field: &'static str) -> Result<T, AuthError> {
+    value
+        .ok_or_else(|| AuthError::Internal(format!("Missing resolved current user field: {field}")))
+}
+
+/// Build one public authenticated-user response.
+pub fn auth_response_build(current_user: &CurrentUser) -> Result<AuthResponse, AuthError> {
+    Ok(AuthResponse {
+        user: UserResponse {
+            id: current_user.user_id.to_string(),
+            email: current_user.email.clone(),
+            email_confirmed_at: current_user.email_confirmed_at.map(|dt| dt.to_rfc3339()),
+        },
+        organization: OrganizationResponse {
+            id: current_user.organization_id.to_string(),
+            name: current_user_field_require(
+                current_user.organization_name.clone(),
+                "organization_name",
+            )?,
+            role: current_user.organization_role,
+        },
+        auth_role: current_user.role.clone(),
+    })
+}
+
+/// Build one auth response with updated cookies.
+pub fn auth_response_with_cookies_build(
+    jar: CookieJar,
+    current_user: &CurrentUser,
+) -> Result<Response, AuthError> {
+    Ok((jar, Json(auth_response_build(current_user)?)).into_response())
 }
 
 /// Hooks for auth lifecycle events (sign-up, sign-in).
 ///
-/// Implement this trait to receive callbacks when users sign up or sign in.
-/// The user parameter uses your backend's user type via [`AuthBackend::User`].
+/// Implement this trait to receive callbacks when authenticated users sign up or sign in.
 ///
 /// # Example
 ///
 /// ```rust,no_run
-/// use fast_auth::{AuthHooks, AuthUser};
+/// use fast_auth::{AuthHooks, CurrentUser};
 ///
 /// #[derive(Clone)]
 /// struct MyHooks;
 ///
-/// impl<U: AuthUser> AuthHooks<U> for MyHooks {
-///     fn on_sign_up(&self, user: &U) -> impl std::future::Future<Output = ()> + Send {
-///         let user_id = user.id();
-///         async move { println!("User {user_id} signed up!"); }
+/// impl AuthHooks for MyHooks {
+///     fn on_sign_up(&self, current_user: &CurrentUser) -> impl std::future::Future<Output = ()> + Send {
+///         let organization_id = current_user.organization_id;
+///         async move { println!("Provisioned org {organization_id}!"); }
 ///     }
 /// }
 /// ```
-pub trait AuthHooks<U: AuthUser>: Send + Sync + Clone + 'static {
-    /// Called after a user is created.
-    fn on_sign_up(&self, _user: &U) -> impl Future<Output = ()> + Send {
+pub trait AuthHooks: Send + Sync + Clone + 'static {
+    /// Called after an authenticated user is created.
+    fn on_sign_up(&self, _current_user: &CurrentUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 
-    /// Called after a user signs in.
-    fn on_sign_in(&self, _user: &U) -> impl Future<Output = ()> + Send {
+    /// Called after an authenticated user signs in.
+    fn on_sign_in(&self, _current_user: &CurrentUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 }
 
-impl<U: AuthUser> AuthHooks<U> for () {}
+impl AuthHooks for () {}
 
 /// Email/password auth with JWT tokens. Cheap to clone.
 ///
@@ -134,7 +186,7 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 /// let auth = Auth::new(config, backend).unwrap();
 /// ```
 #[derive(Clone)]
-pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = (), E: EmailSender = ()> {
+pub struct Auth<B: AuthBackend, H: AuthHooks = (), E: EmailSender = ()> {
     config: Arc<AuthConfig>,
     backend: B,
     hooks: H,
@@ -154,9 +206,9 @@ impl<B: AuthBackend> Auth<B, (), ()> {
     }
 }
 
-impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
+impl<B: AuthBackend, H: AuthHooks, E: EmailSender> Auth<B, H, E> {
     /// Attach custom lifecycle hooks.
-    pub fn with_hooks<NewH: AuthHooks<B::User>>(self, hooks: NewH) -> Auth<B, NewH, E> {
+    pub fn with_hooks<NewH: AuthHooks>(self, hooks: NewH) -> Auth<B, NewH, E> {
         Auth {
             config: self.config,
             backend: self.backend,
@@ -188,6 +240,7 @@ impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
             .merge(handlers::sign_out_routes::<B, H, E>())
             .merge(handlers::api_key_routes::<B, H, E>())
             .merge(handlers::me_routes::<B, H, E>())
+            .merge(handlers::organization_routes::<B, H, E>())
             .merge(handlers::email_confirm_routes::<B, H, E>())
             .merge(handlers::password_reset_routes::<B, H, E>())
             .with_state(self.clone())

@@ -23,6 +23,11 @@ use utoipa::{
             api = handlers::api_keys::ApiKeyApi,
             tags = ["auth"]
         ),
+        (
+            path = handlers::organizations::ORGANIZATIONS_PATH,
+            api = handlers::organizations::OrganizationApi,
+            tags = ["auth"]
+        ),
         (path = handlers::ME_PATH, api = handlers::me::MeApi, tags = ["auth"]),
         (
             path = handlers::EMAIL_CONFIRM_PATH,

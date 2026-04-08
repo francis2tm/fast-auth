@@ -1,8 +1,8 @@
 //! Handlers for user API key management.
 
 use crate::{
-    Auth, AuthApiKey, AuthApiKeyListSortBy, AuthApiKeyWithSecret, AuthBackend, AuthHooks,
-    CurrentUser, EmailSender, api_key_issue, error::AuthError,
+    ApiKey, ApiKeyListSortBy, ApiKeyWithSecret, Auth, AuthBackend, AuthHooks, CurrentUser,
+    EmailSender, api_key_issue, error::AuthError,
 };
 use axum::{
     Json, Router,
@@ -24,7 +24,7 @@ pub const API_KEYS_PATH: &str = "/auth/api-keys";
     components(schemas(
         ApiKeyCreateRequest,
         ApiKeyCreateResponse,
-        AuthApiKeyListSortBy,
+        ApiKeyListSortBy,
         ListSortOrder,
         ApiKeySummary,
         ListPageResult<ApiKeySummary>,
@@ -34,8 +34,7 @@ pub const API_KEYS_PATH: &str = "/auth/api-keys";
 pub(crate) struct ApiKeyApi;
 
 /// Create/list/revoke API key routes.
-pub fn api_key_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn api_key_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>> {
     Router::new()
         .route(
             API_KEYS_PATH,
@@ -61,8 +60,12 @@ pub struct ApiKeySummary {
     pub id: Uuid,
     /// User-defined display name.
     pub name: String,
+    /// Owning organization id.
+    pub organization_id: Uuid,
     /// Stable visible key prefix.
     pub key_prefix: String,
+    /// User id that created the key.
+    pub created_by_user_id: Uuid,
     /// Creation timestamp.
     pub created_at: DateTime<Utc>,
     /// Last successful use timestamp.
@@ -76,8 +79,12 @@ pub struct ApiKeyCreateResponse {
     pub id: Uuid,
     /// User-defined display name.
     pub name: String,
+    /// Owning organization id.
+    pub organization_id: Uuid,
     /// Plaintext key returned once.
     pub key: String,
+    /// User id that created the key.
+    pub created_by_user_id: Uuid,
     /// Stable visible key prefix.
     pub key_prefix: String,
     /// Creation timestamp.
@@ -86,26 +93,30 @@ pub struct ApiKeyCreateResponse {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-common::list_query_params_type!(pub ApiKeyListQuery, AuthApiKeyListSortBy);
+common::list_query_params_type!(pub ApiKeyListQuery, ApiKeyListSortBy);
 
-impl From<AuthApiKey> for ApiKeySummary {
-    fn from(value: AuthApiKey) -> Self {
+impl From<ApiKey> for ApiKeySummary {
+    fn from(value: ApiKey) -> Self {
         Self {
             id: value.id,
             name: value.name,
+            organization_id: value.organization_id,
             key_prefix: value.key_prefix,
+            created_by_user_id: value.created_by_user_id,
             created_at: value.created_at,
             last_used_at: value.last_used_at,
         }
     }
 }
 
-impl From<AuthApiKeyWithSecret> for ApiKeyCreateResponse {
-    fn from(value: AuthApiKeyWithSecret) -> Self {
+impl From<ApiKeyWithSecret> for ApiKeyCreateResponse {
+    fn from(value: ApiKeyWithSecret) -> Self {
         Self {
             id: value.id,
             name: value.name,
+            organization_id: value.organization_id,
             key: value.key,
+            created_by_user_id: value.created_by_user_id,
             key_prefix: value.key_prefix,
             created_at: value.created_at,
             last_used_at: value.last_used_at,
@@ -113,7 +124,7 @@ impl From<AuthApiKeyWithSecret> for ApiKeyCreateResponse {
     }
 }
 
-/// Create one API key for the current user.
+/// Create one API key for the current organization.
 #[utoipa::path(
     post,
     path = "",
@@ -126,7 +137,7 @@ impl From<AuthApiKeyWithSecret> for ApiKeyCreateResponse {
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn api_key_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,
     Json(request): Json<ApiKeyCreateRequest>,
@@ -139,9 +150,14 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
     }
 
     Ok(Json(
-        api_key_issue(auth.backend(), current_user.user_id, name)
-            .await?
-            .into(),
+        api_key_issue(
+            auth.backend(),
+            current_user.organization_id,
+            current_user.user_id,
+            name,
+        )
+        .await?
+        .into(),
     ))
 }
 
@@ -158,18 +174,18 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSende
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn api_keys_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,
     Query(query): Query<ApiKeyListQuery>,
 ) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
-    let query: ListQuery<AuthApiKeyListSortBy> = query.into();
+    let query: ListQuery<ApiKeyListSortBy> = query.into();
     query
         .validate()
         .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
     let api_keys = auth
         .backend()
-        .api_keys_list(current_user.user_id, query)
+        .api_keys_list(current_user.organization_id, query)
         .await
         .map_err(AuthError::from_backend)?;
     Ok(Json(query.result_build(
@@ -191,14 +207,14 @@ pub async fn api_keys_list<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn api_key_delete<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn api_key_delete<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     current_user: CurrentUser,
     State(auth): State<Auth<B, H, E>>,
     Path(api_key_id): Path<Uuid>,
 ) -> Result<Json<ApiKeySummary>, AuthError> {
     let api_key = auth
         .backend()
-        .api_key_delete(current_user.user_id, api_key_id)
+        .api_key_delete(current_user.organization_id, api_key_id)
         .await
         .map_err(AuthError::from_backend)?;
     Ok(Json(api_key.into()))

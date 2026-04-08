@@ -1,7 +1,8 @@
 //! Authentication middleware for Axum.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
+    Auth, AuthBackend, AuthHooks, EmailSender,
+    backend::OrganizationRole,
     cookies::{access_token_cookie_clear, refresh_token_cookie_clear},
     error::AuthError,
     tokens::access_token_validate,
@@ -23,8 +24,12 @@ use uuid::Uuid;
 pub(crate) struct UserContext {
     /// User ID if authenticated, None if anonymous.
     pub user_id: Option<Uuid>,
+    /// Active organization id if authenticated.
+    pub organization_id: Option<Uuid>,
     /// User email if authenticated, None if anonymous.
     pub email: Option<String>,
+    /// Active organization role when authenticated.
+    pub organization_role: Option<OrganizationRole>,
     /// User role: "authenticated" or "anon".
     pub role: String,
 }
@@ -33,7 +38,9 @@ impl Default for UserContext {
     fn default() -> Self {
         Self {
             user_id: None,
+            organization_id: None,
             email: None,
+            organization_role: None,
             role: "anon".to_string(),
         }
     }
@@ -51,7 +58,7 @@ impl Default for UserContext {
 /// - **No auth cookies**: Injects anonymous UserContext
 ///
 /// Refresh-token rotation is handled explicitly by `/auth/refresh`.
-pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn base<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     mut request: Request<Body>,
     next: Next,
@@ -75,10 +82,12 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
             .api_key_authenticate(api_key, chrono::Utc::now())
             .await
         {
-            Ok(Some(user)) => {
-                context.user_id = Some(user.id());
-                context.email = Some(user.email().to_string());
-                context.role = "authenticated".to_string();
+            Ok(Some(current_user)) => {
+                context.user_id = Some(current_user.user_id);
+                context.organization_id = Some(current_user.organization_id);
+                context.email = Some(current_user.email);
+                context.organization_role = Some(current_user.organization_role);
+                context.role = current_user.role;
             }
             Ok(None) => return AuthError::InvalidToken.into_response(),
             Err(error) => return AuthError::from_backend(error).into_response(),
@@ -88,8 +97,13 @@ pub async fn base<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         match access_token_validate(jwt_cookie.value(), config) {
             Ok(claims) => {
                 if let Ok(user_id) = Uuid::parse_str(&claims.sub) {
+                    let Ok(organization_id) = Uuid::parse_str(&claims.organization_id) else {
+                        return AuthError::InvalidToken.into_response();
+                    };
                     context.user_id = Some(user_id);
+                    context.organization_id = Some(organization_id);
                     context.email = Some(claims.email);
+                    context.organization_role = Some(claims.organization_role);
                     context.role = claims.role;
                 }
             }
@@ -152,7 +166,9 @@ mod tests {
     async fn authenticated_users_pass_through() {
         let app = app_with_context(UserContext {
             user_id: Some(Uuid::new_v4()),
+            organization_id: Some(Uuid::new_v4()),
             email: Some("user@example.com".into()),
+            organization_role: Some(OrganizationRole::Owner),
             role: "authenticated".into(),
         });
 

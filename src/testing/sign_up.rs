@@ -5,11 +5,12 @@ use reqwest::{StatusCode, header};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::AuthCookieResponse;
+use crate::AuthResponse;
 use crate::AuthUser;
+use crate::OrganizationRole;
 use crate::handlers::SIGN_UP_PATH;
 
-use super::TestContext;
+use super::{TestContext, auth_response_assert};
 use crate::AuthBackend;
 
 /// Verifies that sign-up persists a new user and emits auth cookies.
@@ -51,8 +52,7 @@ pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
 
     // Verify response body contains user email
     let body = response.bytes().await.unwrap();
-    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.user.email, email);
+    let parsed: AuthResponse = serde_json::from_slice(&body).unwrap();
 
     // Verify user was persisted
     let stored_user = ctx
@@ -61,6 +61,8 @@ pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user persisted");
+    auth_response_assert(&parsed, &email, OrganizationRole::Owner);
+    assert_eq!(parsed.user.id, stored_user.id().to_string());
     assert_eq!(stored_user.email(), email);
 }
 
@@ -186,8 +188,7 @@ pub async fn sign_up_allows_single_quote_email_as_literal<C: TestContext>() {
     }));
 
     let body = response.bytes().await.unwrap();
-    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.user.email, email);
+    let parsed: AuthResponse = serde_json::from_slice(&body).unwrap();
 
     let stored_user = ctx
         .backend()
@@ -195,6 +196,8 @@ pub async fn sign_up_allows_single_quote_email_as_literal<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user persisted");
+    auth_response_assert(&parsed, &email, OrganizationRole::Owner);
+    assert_eq!(parsed.user.id, stored_user.id().to_string());
     assert_eq!(stored_user.email(), email);
 }
 

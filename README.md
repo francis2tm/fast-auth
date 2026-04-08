@@ -1,6 +1,6 @@
 # fast-auth
 
-A simple authentication library for Axum with JWT access tokens, rotating refresh tokens, user API keys, and pluggable storage.
+An authentication library for Axum with JWT access tokens, rotating refresh tokens, organizations and RBAC, API keys, and pluggable storage.
 
 ## Features
 
@@ -11,6 +11,7 @@ A simple authentication library for Axum with JWT access tokens, rotating refres
 - Refresh token rotation and replay protection
 - Explicit session refresh via `/auth/refresh`
 - HttpOnly cookie transport
+- Organizations and RBAC
 - Bearer API key authentication for protected routes
 - API key management endpoints with one-time secret reveal
 - Sign-up/sign-in hooks
@@ -83,7 +84,10 @@ impl AuthBackend for MyBackend {
         Ok(None)
     }
 
-    async fn user_get_by_id(&self, _id: Uuid) -> Result<Option<Self::User>, Self::Error> {
+    async fn current_user_get_by_user_id(
+        &self,
+        _user_id: Uuid,
+    ) -> Result<Option<fast_auth::CurrentUser>, Self::Error> {
         Ok(None)
     }
 
@@ -97,15 +101,15 @@ impl AuthBackend for MyBackend {
         _name: &str,
         _key_prefix: &str,
         _key_hash: &str,
-    ) -> Result<fast_auth::AuthApiKey, Self::Error> {
+    ) -> Result<fast_auth::ApiKey, Self::Error> {
         Err(MyError::Unexpected("not implemented".to_string()))
     }
 
     async fn api_keys_list(
         &self,
         _user_id: Uuid,
-        query: ListQuery<fast_auth::AuthApiKeyListSortBy>,
-    ) -> Result<ListPageResult<fast_auth::AuthApiKey>, Self::Error> {
+        query: ListQuery<fast_auth::ApiKeyListSortBy>,
+    ) -> Result<ListPageResult<fast_auth::ApiKey>, Self::Error> {
         Ok(query.result_build(Vec::new(), 0))
     }
 
@@ -113,7 +117,7 @@ impl AuthBackend for MyBackend {
         &self,
         _user_id: Uuid,
         _api_key_id: Uuid,
-    ) -> Result<fast_auth::AuthApiKey, Self::Error> {
+    ) -> Result<fast_auth::ApiKey, Self::Error> {
         Err(MyError::Unexpected("not implemented".to_string()))
     }
 
@@ -218,10 +222,18 @@ the API-key endpoints and are not refreshed.
 
 ```rust,ignore
 use axum::Json;
-use fast_auth::CurrentUser;
+use fast_auth::{CurrentAdmin, CurrentOwner, CurrentUser};
 
-async fn protected_route(user: CurrentUser) -> Json<String> {
+async fn user_protected_route(user: CurrentUser) -> Json<String> {
     Json(format!("Hello, {}", user.email))
+}
+
+async fn admin_protected_route(admin: CurrentAdmin) -> Json<&'static str> {
+    Json(format!("Hello, {}", admin.email))
+}
+
+async fn owner_protected_route(owner: CurrentOwner) -> Json<&'static str> {
+    Json(format!("Hello, {}", owner.email))
 }
 ```
 

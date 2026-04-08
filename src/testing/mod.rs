@@ -34,6 +34,7 @@
 
 pub mod access_and_refresh;
 pub mod api_keys;
+pub mod organizations;
 pub mod sign_in;
 pub mod sign_out;
 pub mod sign_up;
@@ -48,8 +49,8 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::AuthBackend;
-use crate::handlers::{API_KEYS_PATH, SIGN_UP_PATH};
-use crate::{AuthConfig, AuthUser};
+use crate::handlers::{API_KEYS_PATH, ME_PATH, SIGN_UP_PATH};
+use crate::{AuthConfig, AuthResponse, AuthUser};
 
 /// Refresh token information for test assertions.
 #[derive(Debug, Clone)]
@@ -160,6 +161,58 @@ impl TestUser {
             self.api_key.as_deref().expect("api key should be present")
         )
     }
+
+    /// Replace the stored auth cookies from one response header set.
+    pub fn auth_cookies_replace(
+        &mut self,
+        headers: &reqwest::header::HeaderMap,
+        config: &AuthConfig,
+    ) {
+        self.access_token = Self::extract_cookie(headers, &config.cookie_access_token_name)
+            .expect("response should set access token cookie");
+        self.refresh_token = Self::extract_cookie(headers, &config.cookie_refresh_token_name)
+            .expect("response should set refresh token cookie");
+    }
+}
+
+/// Assert one authenticated auth response shape.
+pub fn auth_response_assert(
+    payload: &crate::AuthResponse,
+    expected_email: &str,
+    expected_organization_role: crate::OrganizationRole,
+) {
+    assert!(
+        !payload.user.id.is_empty(),
+        "auth response must include user id"
+    );
+    assert_eq!(payload.user.email, expected_email);
+    assert!(
+        !payload.organization.id.is_empty(),
+        "auth response must include organization id",
+    );
+    assert!(
+        !payload.organization.name.trim().is_empty(),
+        "auth response must include organization name",
+    );
+    assert_eq!(payload.organization.role, expected_organization_role);
+    assert_eq!(payload.auth_role, "authenticated");
+}
+
+/// Load the authenticated `/auth/me` response for one test user.
+pub async fn me_get(
+    base_url: &str,
+    client: &Client,
+    user: &TestUser,
+    config: &AuthConfig,
+) -> AuthResponse {
+    let response = client
+        .get(format!("{base_url}{ME_PATH}"))
+        .header(header::COOKIE, user.cookie_header(config))
+        .send()
+        .await
+        .expect("me request");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.expect("me json")
 }
 
 /// Context trait that test implementations must provide.
@@ -251,8 +304,21 @@ impl<C: TestContext> Suite<C> {
 
         // API key tests
         api_keys::api_key_create_list_use_delete_flow::<C>().await;
+        api_keys::api_keys_are_scoped_to_active_organization::<C>().await;
         api_keys::bearer_api_key_takes_precedence_over_cookie::<C>().await;
         api_keys::invalid_api_key_returns_unauthorized::<C>().await;
+
+        // Organization tests
+        organizations::organizations_include_default_membership_and_support_crud::<C>().await;
+        organizations::organization_switch_updates_active_auth_context::<C>().await;
+        organizations::organization_invite_accept_adds_membership_and_switches_context::<C>().await;
+        organizations::organization_invite_revoke_prevents_acceptance::<C>().await;
+        organizations::organization_invite_accept_rejects_wrong_email::<C>().await;
+        organizations::organization_invite_accept_rejects_reuse::<C>().await;
+        organizations::organization_member_role_gates_admin_routes::<C>().await;
+        organizations::organization_member_role_update_requires_owner::<C>().await;
+        organizations::organization_cross_org_admin_routes_return_not_found::<C>().await;
+        organizations::organization_admin_can_manage_members_and_invites::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -418,6 +484,12 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn api_keys_are_scoped_to_active_organization() {
+            $crate::testing::api_keys::api_keys_are_scoped_to_active_organization::<$context>()
+                .await;
+        }
+
+        #[tokio::test]
         async fn bearer_api_key_takes_precedence_over_cookie() {
             $crate::testing::api_keys::bearer_api_key_takes_precedence_over_cookie::<$context>()
                 .await;
@@ -426,6 +498,56 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn invalid_api_key_returns_unauthorized() {
             $crate::testing::api_keys::invalid_api_key_returns_unauthorized::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organizations_include_default_membership_and_support_crud() {
+            $crate::testing::organizations::organizations_include_default_membership_and_support_crud::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_switch_updates_active_auth_context() {
+            $crate::testing::organizations::organization_switch_updates_active_auth_context::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_accept_adds_membership_and_switches_context() {
+            $crate::testing::organizations::organization_invite_accept_adds_membership_and_switches_context::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_revoke_prevents_acceptance() {
+            $crate::testing::organizations::organization_invite_revoke_prevents_acceptance::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_accept_rejects_wrong_email() {
+            $crate::testing::organizations::organization_invite_accept_rejects_wrong_email::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_accept_rejects_reuse() {
+            $crate::testing::organizations::organization_invite_accept_rejects_reuse::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_member_role_gates_admin_routes() {
+            $crate::testing::organizations::organization_member_role_gates_admin_routes::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_member_role_update_requires_owner() {
+            $crate::testing::organizations::organization_member_role_update_requires_owner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_cross_org_admin_routes_return_not_found() {
+            $crate::testing::organizations::organization_cross_org_admin_routes_return_not_found::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_admin_can_manage_members_and_invites() {
+            $crate::testing::organizations::organization_admin_can_manage_members_and_invites::<$context>().await;
         }
 
         #[tokio::test]

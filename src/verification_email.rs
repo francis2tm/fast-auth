@@ -12,11 +12,7 @@ use crate::{
 ///
 /// Token persistence errors are returned to the caller.
 /// Email delivery errors are logged and swallowed to avoid leaking account existence.
-pub(crate) async fn email_confirm_send_for_user<
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-    E: EmailSender,
->(
+pub(crate) async fn email_confirm_send_for_user<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     auth: &Auth<B, H, E>,
     user: &B::User,
 ) -> Result<(), AuthError> {
