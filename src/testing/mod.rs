@@ -49,7 +49,7 @@ use std::future::Future;
 use uuid::Uuid;
 
 use crate::AuthBackend;
-use crate::handlers::{API_KEYS_PATH, ME_PATH, SIGN_UP_PATH};
+use crate::handlers::{API_KEYS_PATH, ME_PATH, REFRESH_PATH, SIGN_IN_PATH, SIGN_UP_PATH};
 use crate::{AuthConfig, AuthResponse, AuthUser};
 
 /// Refresh token information for test assertions.
@@ -173,6 +173,55 @@ impl TestUser {
         self.refresh_token = Self::extract_cookie(headers, &config.cookie_refresh_token_name)
             .expect("response should set refresh token cookie");
     }
+}
+
+/// Parse one auth response and update the stored auth cookies.
+pub async fn auth_response_with_cookie_update(
+    response: reqwest::Response,
+    user: &mut TestUser,
+    config: &AuthConfig,
+) -> AuthResponse {
+    let headers = response.headers().clone();
+    let payload = response.json().await.expect("auth response json");
+    user.auth_cookies_replace(&headers, config);
+    payload
+}
+
+/// Refresh one authenticated session and return the updated auth response.
+pub async fn auth_refresh(
+    base_url: &str,
+    client: &Client,
+    user: &mut TestUser,
+    config: &AuthConfig,
+) -> AuthResponse {
+    let response = client
+        .post(format!("{base_url}{REFRESH_PATH}"))
+        .header(header::COOKIE, user.cookie_header(config))
+        .send()
+        .await
+        .expect("refresh request");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    auth_response_with_cookie_update(response, user, config).await
+}
+
+/// Sign in one existing user and return the updated auth response.
+pub async fn auth_sign_in(
+    base_url: &str,
+    client: &Client,
+    user: &mut TestUser,
+    config: &AuthConfig,
+) -> AuthResponse {
+    let response = client
+        .post(format!("{base_url}{SIGN_IN_PATH}"))
+        .json(&json!({
+            "email": user.email,
+            "password": user.password,
+        }))
+        .send()
+        .await
+        .expect("sign-in request");
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    auth_response_with_cookie_update(response, user, config).await
 }
 
 /// Assert one authenticated auth response shape.
@@ -310,15 +359,24 @@ impl<C: TestContext> Suite<C> {
 
         // Organization tests
         organizations::organizations_include_default_membership_and_support_crud::<C>().await;
+        organizations::organization_get_rejects_non_member::<C>().await;
         organizations::organization_switch_updates_active_auth_context::<C>().await;
+        organizations::organization_switch_rejects_non_member_organization::<C>().await;
+        organizations::organization_switch_then_refresh_keeps_selected_org::<C>().await;
         organizations::organization_invite_accept_adds_membership_and_switches_context::<C>().await;
         organizations::organization_invite_revoke_prevents_acceptance::<C>().await;
         organizations::organization_invite_accept_rejects_wrong_email::<C>().await;
         organizations::organization_invite_accept_rejects_reuse::<C>().await;
         organizations::organization_member_role_gates_admin_routes::<C>().await;
+        organizations::organization_delete_active_org_preserves_auth_or_is_rejected::<C>().await;
         organizations::organization_member_role_update_requires_owner::<C>().await;
+        organizations::organization_admin_cannot_invite_owner::<C>().await;
+        organizations::organization_role_change_is_visible_after_refresh_and_sign_in::<C>().await;
         organizations::organization_cross_org_admin_routes_return_not_found::<C>().await;
         organizations::organization_admin_can_manage_members_and_invites::<C>().await;
+        organizations::organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently::<C>().await;
+        organizations::organization_admin_cannot_delete_owner::<C>().await;
+        organizations::organization_last_owner_cannot_be_demoted_or_removed::<C>().await;
 
         // Verification tests
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -506,8 +564,23 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_get_rejects_non_member() {
+            $crate::testing::organizations::organization_get_rejects_non_member::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_switch_updates_active_auth_context() {
             $crate::testing::organizations::organization_switch_updates_active_auth_context::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_switch_rejects_non_member_organization() {
+            $crate::testing::organizations::organization_switch_rejects_non_member_organization::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_switch_then_refresh_keeps_selected_org() {
+            $crate::testing::organizations::organization_switch_then_refresh_keeps_selected_org::<$context>().await;
         }
 
         #[tokio::test]
@@ -536,8 +609,23 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_delete_active_org_preserves_auth_or_is_rejected() {
+            $crate::testing::organizations::organization_delete_active_org_preserves_auth_or_is_rejected::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_member_role_update_requires_owner() {
             $crate::testing::organizations::organization_member_role_update_requires_owner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_admin_cannot_invite_owner() {
+            $crate::testing::organizations::organization_admin_cannot_invite_owner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_role_change_is_visible_after_refresh_and_sign_in() {
+            $crate::testing::organizations::organization_role_change_is_visible_after_refresh_and_sign_in::<$context>().await;
         }
 
         #[tokio::test]
@@ -548,6 +636,21 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn organization_admin_can_manage_members_and_invites() {
             $crate::testing::organizations::organization_admin_can_manage_members_and_invites::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently() {
+            $crate::testing::organizations::organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_admin_cannot_delete_owner() {
+            $crate::testing::organizations::organization_admin_cannot_delete_owner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_last_owner_cannot_be_demoted_or_removed() {
+            $crate::testing::organizations::organization_last_owner_cannot_be_demoted_or_removed::<$context>().await;
         }
 
         #[tokio::test]

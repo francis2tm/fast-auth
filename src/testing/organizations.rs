@@ -11,7 +11,10 @@ use crate::{
     OrganizationMember, OrganizationRole,
 };
 
-use super::{TestContext, TestUser, auth_response_assert, me_get};
+use super::{
+    TestContext, TestUser, auth_refresh, auth_response_assert, auth_response_with_cookie_update,
+    auth_sign_in, me_get,
+};
 
 /// Return the path for one organization resource.
 fn organization_path(organization_id: Uuid) -> String {
@@ -171,10 +174,7 @@ async fn organization_invite_accept(
         .await
         .expect("organization invite accept request");
     assert_eq!(response.status(), StatusCode::OK);
-    let headers = response.headers().clone();
-    let payload: AuthResponse = response_json(response).await;
-    user.auth_cookies_replace(&headers, config);
-    payload
+    auth_response_with_cookie_update(response, user, config).await
 }
 
 /// Organizations should include the default membership and support CRUD.
@@ -259,6 +259,29 @@ pub async fn organizations_include_default_membership_and_support_crud<C: TestCo
     );
 }
 
+/// Non-members must not be able to load one organization.
+pub async fn organization_get_rejects_non_member<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let stranger = TestUser::new(&base_url, &client, auth_config).await;
+    let organization_id = Uuid::parse_str(
+        &me_get(&base_url, &client, &owner, auth_config)
+            .await
+            .organization
+            .id,
+    )
+    .expect("organization id");
+
+    let response = client
+        .get(format!("{base_url}{}", organization_path(organization_id)))
+        .header(header::COOKIE, stranger.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("organization get request");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 /// Switching organizations should update cookies and `/auth/me`.
 pub async fn organization_switch_updates_active_auth_context<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
@@ -288,6 +311,66 @@ pub async fn organization_switch_updates_active_auth_context<C: TestContext>() {
     let me = me_get(&base_url, &client, &user, auth_config).await;
     assert_eq!(me.organization.id, organization.id.to_string());
     assert_eq!(me.organization.name, organization.name);
+    assert_eq!(me.organization.role, OrganizationRole::Owner);
+}
+
+/// Switching to an organization outside the caller membership must fail.
+pub async fn organization_switch_rejects_non_member_organization<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let stranger = TestUser::new(&base_url, &client, auth_config).await;
+    let organization_id = Uuid::parse_str(
+        &me_get(&base_url, &client, &owner, auth_config)
+            .await
+            .organization
+            .id,
+    )
+    .expect("organization id");
+
+    let response = client
+        .post(format!("{base_url}{}", organization_current_path()))
+        .header(header::COOKIE, stranger.cookie_header(auth_config))
+        .json(&json!({ "organization_id": organization_id }))
+        .send()
+        .await
+        .expect("organization switch request");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// Switching organizations must survive refresh and sign-in.
+pub async fn organization_switch_then_refresh_keeps_selected_org<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let mut user = TestUser::new(&base_url, &client, auth_config).await;
+    let organization = organization_create(&base_url, &client, &user, auth_config, "Secondary")
+        .await
+        .organization;
+
+    let switch_response = client
+        .post(format!("{base_url}{}", organization_current_path()))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .json(&json!({ "organization_id": organization.id }))
+        .send()
+        .await
+        .expect("organization switch request");
+    assert_eq!(switch_response.status(), StatusCode::OK);
+    let switch_payload =
+        auth_response_with_cookie_update(switch_response, &mut user, auth_config).await;
+
+    auth_response_assert(&switch_payload, &user.email, OrganizationRole::Owner);
+    assert_eq!(switch_payload.organization.id, organization.id.to_string());
+
+    let refresh_payload = auth_refresh(&base_url, &client, &mut user, auth_config).await;
+    auth_response_assert(&refresh_payload, &user.email, OrganizationRole::Owner);
+    assert_eq!(refresh_payload.organization.id, organization.id.to_string());
+
+    let sign_in_payload = auth_sign_in(&base_url, &client, &mut user, auth_config).await;
+    auth_response_assert(&sign_in_payload, &user.email, OrganizationRole::Owner);
+    assert_eq!(sign_in_payload.organization.id, organization.id.to_string());
+
+    let me = me_get(&base_url, &client, &user, auth_config).await;
+    assert_eq!(me.organization.id, organization.id.to_string());
     assert_eq!(me.organization.role, OrganizationRole::Owner);
 }
 
@@ -585,6 +668,45 @@ pub async fn organization_member_role_gates_admin_routes<C: TestContext>() {
     assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
 }
 
+/// Deleting the active organization must not leave auth in an invalid state.
+pub async fn organization_delete_active_org_preserves_auth_or_is_rejected<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let mut user = TestUser::new(&base_url, &client, auth_config).await;
+    let organization = organization_create(&base_url, &client, &user, auth_config, "Secondary")
+        .await
+        .organization;
+
+    let switch_response = client
+        .post(format!("{base_url}{}", organization_current_path()))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .json(&json!({ "organization_id": organization.id }))
+        .send()
+        .await
+        .expect("organization switch request");
+    assert_eq!(switch_response.status(), StatusCode::OK);
+    let _: AuthResponse =
+        auth_response_with_cookie_update(switch_response, &mut user, auth_config).await;
+
+    let delete_response = client
+        .delete(format!("{base_url}{}", organization_path(organization.id)))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("organization delete request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+
+    let me = me_get(&base_url, &client, &user, auth_config).await;
+    assert_eq!(me.organization.id, organization.id.to_string());
+    assert_eq!(me.organization.role, OrganizationRole::Owner);
+
+    let refresh_payload = auth_refresh(&base_url, &client, &mut user, auth_config).await;
+    assert_eq!(refresh_payload.organization.id, organization.id.to_string());
+
+    let sign_in_payload = auth_sign_in(&base_url, &client, &mut user, auth_config).await;
+    assert_eq!(sign_in_payload.organization.id, organization.id.to_string());
+}
+
 /// Cross-organization admin access should resolve as not found.
 pub async fn organization_cross_org_admin_routes_return_not_found<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
@@ -720,6 +842,119 @@ pub async fn organization_member_role_update_requires_owner<C: TestContext>() {
     assert_eq!(updated_member.role, OrganizationRole::Admin);
 }
 
+/// Admins must not be able to invite new owners.
+pub async fn organization_admin_cannot_invite_owner<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let mut admin = TestUser::new(&base_url, &client, auth_config).await;
+    let organization_id = Uuid::parse_str(
+        &me_get(&base_url, &client, &owner, auth_config)
+            .await
+            .organization
+            .id,
+    )
+    .expect("organization id");
+
+    let admin_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &admin.email,
+        OrganizationRole::Admin,
+    )
+    .await;
+    organization_invite_accept(
+        &base_url,
+        &client,
+        &mut admin,
+        auth_config,
+        &admin_invite.token,
+    )
+    .await;
+
+    let response = client
+        .post(format!(
+            "{base_url}{}",
+            organization_invites_path(organization_id)
+        ))
+        .header(header::COOKIE, admin.cookie_header(auth_config))
+        .json(&json!({
+            "email": format!("owner+{}@example.com", Uuid::new_v4()),
+            "role": OrganizationRole::Owner,
+        }))
+        .send()
+        .await
+        .expect("admin invite owner request");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// Role changes must be reflected by later refresh and sign-in flows.
+pub async fn organization_role_change_is_visible_after_refresh_and_sign_in<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let mut admin = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+
+    let admin_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &admin.email,
+        OrganizationRole::Admin,
+    )
+    .await;
+    let admin_payload = organization_invite_accept(
+        &base_url,
+        &client,
+        &mut admin,
+        auth_config,
+        &admin_invite.token,
+    )
+    .await;
+    auth_response_assert(&admin_payload, &admin.email, OrganizationRole::Admin);
+    let admin_user_id = Uuid::parse_str(&admin_payload.user.id).expect("admin user id");
+
+    let demote_response = client
+        .patch(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, admin_user_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .json(&json!({ "role": OrganizationRole::Member }))
+        .send()
+        .await
+        .expect("demote admin request");
+    assert_eq!(demote_response.status(), StatusCode::OK);
+    let demoted_member: OrganizationMember = response_json(demote_response).await;
+    assert_eq!(demoted_member.role, OrganizationRole::Member);
+
+    let refresh_payload = auth_refresh(&base_url, &client, &mut admin, auth_config).await;
+    auth_response_assert(&refresh_payload, &admin.email, OrganizationRole::Member);
+    assert_eq!(refresh_payload.organization.id, organization_id.to_string());
+
+    let sign_in_payload = auth_sign_in(&base_url, &client, &mut admin, auth_config).await;
+    auth_response_assert(&sign_in_payload, &admin.email, OrganizationRole::Member);
+    assert_eq!(sign_in_payload.organization.id, organization_id.to_string());
+
+    let members_response = client
+        .get(format!(
+            "{base_url}{}",
+            organization_members_path(organization_id)
+        ))
+        .header(header::COOKIE, admin.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("member list members request");
+    assert_eq!(members_response.status(), StatusCode::FORBIDDEN);
+}
+
 /// Admin sessions should still manage invites and member deletion inside their organization.
 pub async fn organization_admin_can_manage_members_and_invites<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
@@ -831,4 +1066,164 @@ pub async fn organization_admin_can_manage_members_and_invites<C: TestContext>()
             .all(|member| member.user_id != member_user_id),
         "deleted member should no longer appear in the organization roster",
     );
+}
+
+/// Deleting one active membership must not strand the affected auth context.
+pub async fn organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently<
+    C: TestContext,
+>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let mut member = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+
+    let member_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &member.email,
+        OrganizationRole::Member,
+    )
+    .await;
+    let member_payload = organization_invite_accept(
+        &base_url,
+        &client,
+        &mut member,
+        auth_config,
+        &member_invite.token,
+    )
+    .await;
+    let member_user_id = Uuid::parse_str(&member_payload.user.id).expect("member user id");
+
+    let delete_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, member_user_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("delete active membership request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+
+    let me = me_get(&base_url, &client, &member, auth_config).await;
+    assert_eq!(me.organization.id, organization_id.to_string());
+    assert_eq!(me.organization.role, OrganizationRole::Member);
+
+    let refresh_payload = auth_refresh(&base_url, &client, &mut member, auth_config).await;
+    assert_eq!(refresh_payload.organization.id, organization_id.to_string());
+
+    let sign_in_payload = auth_sign_in(&base_url, &client, &mut member, auth_config).await;
+    assert_eq!(sign_in_payload.organization.id, organization_id.to_string());
+}
+
+/// Admins must not be able to delete owner memberships.
+pub async fn organization_admin_cannot_delete_owner<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let mut admin = TestUser::new(&base_url, &client, auth_config).await;
+    let mut co_owner = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+
+    let admin_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &admin.email,
+        OrganizationRole::Admin,
+    )
+    .await;
+    let owner_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &co_owner.email,
+        OrganizationRole::Owner,
+    )
+    .await;
+
+    organization_invite_accept(
+        &base_url,
+        &client,
+        &mut admin,
+        auth_config,
+        &admin_invite.token,
+    )
+    .await;
+    let owner_payload = organization_invite_accept(
+        &base_url,
+        &client,
+        &mut co_owner,
+        auth_config,
+        &owner_invite.token,
+    )
+    .await;
+    let co_owner_user_id = Uuid::parse_str(&owner_payload.user.id).expect("co-owner user id");
+
+    let delete_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, co_owner_user_id)
+        ))
+        .header(header::COOKIE, admin.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("admin delete owner request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+
+    let members =
+        organization_members_list(&base_url, &client, &owner, auth_config, organization_id).await;
+    assert!(
+        members
+            .iter()
+            .any(|member| member.user_id == co_owner_user_id),
+        "owner membership should remain present",
+    );
+}
+
+/// The final remaining owner must not be demoted or removed.
+pub async fn organization_last_owner_cannot_be_demoted_or_removed<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
+
+    let demote_response = client
+        .patch(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, owner_user_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .json(&json!({ "role": OrganizationRole::Admin }))
+        .send()
+        .await
+        .expect("last owner demote request");
+    assert_eq!(demote_response.status(), StatusCode::FORBIDDEN);
+
+    let delete_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, owner_user_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("last owner delete request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+
+    let me = me_get(&base_url, &client, &owner, auth_config).await;
+    assert_eq!(me.organization.id, organization_id.to_string());
+    assert_eq!(me.organization.role, OrganizationRole::Owner);
 }
