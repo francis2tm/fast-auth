@@ -1,9 +1,9 @@
 //! Organization, membership, and invitation handlers.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, CurrentAdmin, CurrentOwner, CurrentUser, EmailSender,
-    Organization, OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember,
-    OrganizationRole, auth_response_with_cookies_build, error::AuthError,
+    Auth, AuthBackend, AuthHooks, CurrentAdmin, CurrentOwner, EmailSender, Organization,
+    OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember, OrganizationRole,
+    RequestUser, auth_response_with_cookies_build, error::AuthError,
     tokens::token_cookies_generate,
 };
 use axum::{
@@ -138,12 +138,12 @@ pub fn organization_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Ro
 
 #[utoipa::path(get, path = "", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organizations_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
 ) -> Result<Json<Vec<OrganizationMember>>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organizations_list(current_user.user_id)
+            .organizations_list(request_user.user_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -151,13 +151,13 @@ async fn organizations_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
 #[utoipa::path(post, path = "", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organizations_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Json(request): Json<OrganizationCreateRequest>,
 ) -> Result<Json<OrganizationMember>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_create(current_user.user_id, request.name.trim())
+            .organization_create(request_user.user_id, request.name.trim())
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -165,13 +165,13 @@ async fn organizations_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
 #[utoipa::path(get, path = "/{organization_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organizations_get<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
 ) -> Result<Json<OrganizationMember>, AuthError> {
     let member = auth
         .backend()
-        .organization_get(current_user.user_id, organization_id)
+        .organization_get(request_user.user_id, organization_id)
         .await
         .map_err(AuthError::from_backend)?
         .ok_or(AuthError::OrganizationNotFound)?;
@@ -219,17 +219,17 @@ async fn organizations_delete<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     )
 )]
 async fn organizations_switch<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Json(request): Json<OrganizationSwitchRequest>,
 ) -> Result<Response, AuthError> {
-    let current_user = auth
+    let hydrated_user = auth
         .backend()
-        .organization_switch(current_user.user_id, request.organization_id)
+        .organization_switch(request_user.user_id, request.organization_id)
         .await
         .map_err(AuthError::from_backend)?;
-    let jar = token_cookies_generate(&auth, &current_user).await?;
-    auth_response_with_cookies_build(jar, &current_user)
+    let jar = token_cookies_generate(&auth, &hydrated_user).await?;
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }
 
 #[utoipa::path(get, path = "/{organization_id}/members", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
@@ -341,15 +341,15 @@ async fn organization_invite_revoke<B: AuthBackend, H: AuthHooks, E: EmailSender
     )
 )]
 async fn organization_invite_accept<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Json(request): Json<OrganizationInviteAcceptRequest>,
 ) -> Result<Response, AuthError> {
-    let current_user = auth
+    let hydrated_user = auth
         .backend()
-        .organization_invite_accept(current_user.user_id, &request.token)
+        .organization_invite_accept(request_user.user_id, &request.token)
         .await
         .map_err(AuthError::from_backend)?;
-    let jar = token_cookies_generate(&auth, &current_user).await?;
-    auth_response_with_cookies_build(jar, &current_user)
+    let jar = token_cookies_generate(&auth, &hydrated_user).await?;
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }

@@ -1,7 +1,7 @@
 //! Token generation and validation utilities.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, CurrentUser, EmailSender,
+    Auth, AuthBackend, AuthHooks, EmailSender, HydratedUser, SessionExchangeParams,
     backend::OrganizationRole,
     config::AuthConfig,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
@@ -39,7 +39,7 @@ pub struct AccessTokenClaims {
 
 /// Generate an access token (JWT).
 pub fn access_token_generate(
-    current_user: &CurrentUser,
+    hydrated_user: &HydratedUser,
     config: &AuthConfig,
 ) -> Result<String, AuthError> {
     let now = Utc::now();
@@ -48,15 +48,15 @@ pub fn access_token_generate(
     let expiry = now + access_expiry;
 
     let claims = AccessTokenClaims {
-        sub: current_user.user_id.to_string(),
+        sub: hydrated_user.user_id.to_string(),
         iat: now.timestamp(),
         exp: expiry.timestamp(),
         iss: config.jwt_issuer.clone(),
         aud: config.jwt_audience.clone(),
-        role: current_user.role.clone(),
-        email: current_user.email.clone(),
-        organization_id: current_user.organization_id.to_string(),
-        organization_role: current_user.organization_role,
+        role: hydrated_user.role.clone(),
+        email: hydrated_user.email.clone(),
+        organization_id: hydrated_user.organization_id.to_string(),
+        organization_role: hydrated_user.organization_role,
     };
 
     let token = encode(
@@ -133,16 +133,16 @@ pub fn token_with_hash_generate() -> (String, String) {
 /// refresh token for the user and creates a new one.
 pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     auth: &Auth<B, H, E>,
-    current_user: &CurrentUser,
+    hydrated_user: &HydratedUser,
 ) -> Result<CookieJar, AuthError> {
-    let access_token = access_token_generate(current_user, auth.config())?;
+    let access_token = access_token_generate(hydrated_user, auth.config())?;
     let (refresh_token, refresh_token_hash) = token_with_hash_generate();
     let refresh_token_expiry = token_expiry_calculate(auth.config().refresh_token_expiry);
 
     // Atomically revoke old tokens and create new one
     auth.backend()
         .session_issue(
-            current_user.user_id,
+            hydrated_user.user_id,
             &refresh_token_hash,
             refresh_token_expiry,
         )
@@ -162,29 +162,23 @@ pub async fn token_cookies_generate<B: AuthBackend, H: AuthHooks, E: EmailSender
 pub async fn token_cookies_refresh<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     auth: &Auth<B, H, E>,
     refresh_token: &str,
-) -> Result<(CookieJar, CurrentUser), AuthError> {
+) -> Result<(CookieJar, HydratedUser), AuthError> {
     let current_refresh_token_hash = token_hash_sha256(refresh_token);
     let (next_refresh_token, next_refresh_token_hash) = token_with_hash_generate();
     let next_refresh_token_expiry = token_expiry_calculate(auth.config().refresh_token_expiry);
 
-    let user_id = auth
+    let hydrated_user = auth
         .backend()
-        .session_exchange(
-            &current_refresh_token_hash,
-            &next_refresh_token_hash,
-            next_refresh_token_expiry,
-        )
+        .session_exchange(SessionExchangeParams {
+            current_refresh_token_hash: &current_refresh_token_hash,
+            next_refresh_token_hash: &next_refresh_token_hash,
+            next_expires_at: next_refresh_token_expiry,
+        })
         .await
         .map_err(AuthError::from_backend)?;
-    let current_user = auth
-        .backend()
-        .current_user_get_by_user_id(user_id)
-        .await
-        .map_err(AuthError::from_backend)?
-        .ok_or(AuthError::UserNotFound)?;
 
     // Reject refresh for unconfirmed users when confirmation is required.
-    if auth.config().email_confirmation_require && current_user.email_confirmed_at.is_none() {
+    if auth.config().email_confirmation_require && hydrated_user.email_confirmed_at.is_none() {
         let _ = auth
             .backend()
             .session_revoke_by_refresh_token_hash(&next_refresh_token_hash)
@@ -192,7 +186,7 @@ pub async fn token_cookies_refresh<B: AuthBackend, H: AuthHooks, E: EmailSender>
         return Err(AuthError::EmailNotConfirmed);
     }
 
-    let access_token = access_token_generate(&current_user, auth.config())?;
+    let access_token = access_token_generate(&hydrated_user, auth.config())?;
     let jar = CookieJar::new()
         .add(access_token_cookie_create(access_token, auth.config()))
         .add(refresh_token_cookie_create(
@@ -200,7 +194,7 @@ pub async fn token_cookies_refresh<B: AuthBackend, H: AuthHooks, E: EmailSender>
             auth.config(),
         ));
 
-    Ok((jar, current_user))
+    Ok((jar, hydrated_user))
 }
 
 #[cfg(test)]
@@ -218,25 +212,25 @@ mod tests {
     #[test]
     fn test_generate_and_validate_access_token() {
         let config = test_config();
-        let current_user = CurrentUser {
+        let hydrated_user = HydratedUser {
             user_id: Uuid::new_v4(),
             email: "test@example.com".to_string(),
             role: "authenticated".to_string(),
             email_confirmed_at: None,
             organization_id: Uuid::new_v4(),
             organization_role: OrganizationRole::Owner,
-            organization_name: Some("Acme".to_string()),
+            organization_name: "Acme".to_string(),
         };
 
-        let token = access_token_generate(&current_user, &config).unwrap();
+        let token = access_token_generate(&hydrated_user, &config).unwrap();
         let claims = access_token_validate(&token, &config).unwrap();
 
-        assert_eq!(claims.sub, current_user.user_id.to_string());
-        assert_eq!(claims.email, current_user.email);
+        assert_eq!(claims.sub, hydrated_user.user_id.to_string());
+        assert_eq!(claims.email, hydrated_user.email);
         assert_eq!(claims.role, "authenticated");
         assert_eq!(
             claims.organization_id,
-            current_user.organization_id.to_string()
+            hydrated_user.organization_id.to_string()
         );
         assert_eq!(claims.organization_role, OrganizationRole::Owner);
         assert_eq!(claims.iss, config.jwt_issuer);
@@ -253,17 +247,17 @@ mod tests {
     #[test]
     fn test_token_with_wrong_secret_fails() {
         let config = test_config();
-        let current_user = CurrentUser {
+        let hydrated_user = HydratedUser {
             user_id: Uuid::new_v4(),
             email: "test@example.com".to_string(),
             role: "authenticated".to_string(),
             email_confirmed_at: None,
             organization_id: Uuid::new_v4(),
             organization_role: OrganizationRole::Owner,
-            organization_name: Some("Acme".to_string()),
+            organization_name: "Acme".to_string(),
         };
 
-        let token = access_token_generate(&current_user, &config).unwrap();
+        let token = access_token_generate(&hydrated_user, &config).unwrap();
 
         let mut wrong_config = config;
         wrong_config.jwt_secret =

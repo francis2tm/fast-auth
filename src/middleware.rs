@@ -82,12 +82,12 @@ pub async fn base<B: AuthBackend, H: AuthHooks, E: EmailSender>(
             .api_key_authenticate(api_key, chrono::Utc::now())
             .await
         {
-            Ok(Some(current_user)) => {
-                context.user_id = Some(current_user.user_id);
-                context.organization_id = Some(current_user.organization_id);
-                context.email = Some(current_user.email);
-                context.organization_role = Some(current_user.organization_role);
-                context.role = current_user.role;
+            Ok(Some(subject)) => {
+                context.user_id = Some(subject.user_id);
+                context.organization_id = Some(subject.organization_id);
+                context.email = Some(subject.email);
+                context.organization_role = Some(subject.organization_role);
+                context.role = subject.role;
             }
             Ok(None) => return AuthError::InvalidToken.into_response(),
             Err(error) => return AuthError::from_backend(error).into_response(),

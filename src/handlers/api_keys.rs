@@ -1,8 +1,8 @@
 //! Handlers for user API key management.
 
 use crate::{
-    ApiKey, ApiKeyListSortBy, ApiKeyWithSecret, Auth, AuthBackend, AuthHooks, CurrentUser,
-    EmailSender, api_key_issue, error::AuthError,
+    ApiKey, ApiKeyListSortBy, ApiKeyWithSecret, Auth, AuthBackend, AuthHooks, EmailSender,
+    RequestUser, api_key_issue, error::AuthError,
 };
 use axum::{
     Json, Router,
@@ -138,7 +138,7 @@ impl From<ApiKeyWithSecret> for ApiKeyCreateResponse {
     )
 )]
 pub async fn api_key_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Json(request): Json<ApiKeyCreateRequest>,
 ) -> Result<Json<ApiKeyCreateResponse>, AuthError> {
@@ -152,8 +152,8 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     Ok(Json(
         api_key_issue(
             auth.backend(),
-            current_user.organization_id,
-            current_user.user_id,
+            request_user.organization_id,
+            request_user.user_id,
             name,
         )
         .await?
@@ -175,7 +175,7 @@ pub async fn api_key_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     )
 )]
 pub async fn api_keys_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Query(query): Query<ApiKeyListQuery>,
 ) -> Result<Json<ListPageResult<ApiKeySummary>>, AuthError> {
@@ -185,7 +185,7 @@ pub async fn api_keys_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
         .map_err(|error| AuthError::InvalidListPage(error.to_string()))?;
     let api_keys = auth
         .backend()
-        .api_keys_list(current_user.organization_id, query)
+        .api_keys_list(request_user.organization_id, query)
         .await
         .map_err(AuthError::from_backend)?;
     Ok(Json(query.result_build(
@@ -208,13 +208,13 @@ pub async fn api_keys_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     )
 )]
 pub async fn api_key_delete<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
     Path(api_key_id): Path<Uuid>,
 ) -> Result<Json<ApiKeySummary>, AuthError> {
     let api_key = auth
         .backend()
-        .api_key_delete(current_user.organization_id, api_key_id)
+        .api_key_delete(request_user.organization_id, api_key_id)
         .await
         .map_err(AuthError::from_backend)?;
     Ok(Json(api_key.into()))

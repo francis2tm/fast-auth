@@ -188,7 +188,8 @@ pub async fn api_keys_are_scoped_to_active_organization<C: TestContext>() {
     assert_eq!(bearer_payload.organization.id, default_me.organization.id);
 
     let restored_me = me_get(&base_url, &client, &user, auth_config).await;
-    assert_eq!(restored_me.organization.id, default_me.organization.id);
+    assert_eq!(restored_me.organization.id, switch_payload.organization.id);
+    assert_ne!(restored_me.organization.id, default_me.organization.id);
 }
 
 /// Bearer API keys must take precedence over ambient cookie auth.

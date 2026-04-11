@@ -707,6 +707,45 @@ pub async fn organization_delete_active_org_preserves_auth_or_is_rejected<C: Tes
     assert_eq!(sign_in_payload.organization.id, organization.id.to_string());
 }
 
+/// Deleting the default personal organization must fail even when inactive.
+pub async fn organization_delete_personal_org_when_inactive_is_rejected<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let mut user = TestUser::new(&base_url, &client, auth_config).await;
+    let personal_organization_id = Uuid::parse_str(
+        &me_get(&base_url, &client, &user, auth_config)
+            .await
+            .organization
+            .id,
+    )
+    .expect("personal organization id");
+    let organization = organization_create(&base_url, &client, &user, auth_config, "Secondary")
+        .await
+        .organization;
+
+    let switch_response = client
+        .post(format!("{base_url}{}", organization_current_path()))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .json(&json!({ "organization_id": organization.id }))
+        .send()
+        .await
+        .expect("organization switch request");
+    assert_eq!(switch_response.status(), StatusCode::OK);
+    let _: AuthResponse =
+        auth_response_with_cookie_update(switch_response, &mut user, auth_config).await;
+
+    let delete_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_path(personal_organization_id)
+        ))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("personal organization delete request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+}
+
 /// Cross-organization admin access should resolve as not found.
 pub async fn organization_cross_org_admin_routes_return_not_found<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
@@ -1188,6 +1227,69 @@ pub async fn organization_admin_cannot_delete_owner<C: TestContext>() {
             .iter()
             .any(|member| member.user_id == co_owner_user_id),
         "owner membership should remain present",
+    );
+}
+
+/// A user must remain owner/member of their own personal organization.
+pub async fn organization_personal_org_membership_cannot_be_demoted_or_removed<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let mut co_owner = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
+
+    let owner_invite = organization_invite_create(
+        &base_url,
+        &client,
+        &owner,
+        auth_config,
+        organization_id,
+        &co_owner.email,
+        OrganizationRole::Owner,
+    )
+    .await;
+
+    organization_invite_accept(
+        &base_url,
+        &client,
+        &mut co_owner,
+        auth_config,
+        &owner_invite.token,
+    )
+    .await;
+
+    let demote_response = client
+        .patch(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, owner_user_id)
+        ))
+        .header(header::COOKIE, co_owner.cookie_header(auth_config))
+        .json(&json!({ "role": OrganizationRole::Admin }))
+        .send()
+        .await
+        .expect("personal owner demote request");
+    assert_eq!(demote_response.status(), StatusCode::FORBIDDEN);
+
+    let delete_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_member_path(organization_id, owner_user_id)
+        ))
+        .header(header::COOKIE, co_owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("personal owner delete request");
+    assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
+
+    let members =
+        organization_members_list(&base_url, &client, &owner, auth_config, organization_id).await;
+    assert!(
+        members
+            .iter()
+            .any(|member| member.user_id == owner_user_id && member.role == OrganizationRole::Owner),
+        "personal owner membership should remain present and owned",
     );
 }
 

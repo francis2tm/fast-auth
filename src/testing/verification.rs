@@ -9,7 +9,7 @@ use crate::handlers::{
 };
 use crate::tokens::{token_generate, token_hash_sha256};
 use crate::verification::VerificationTokenType;
-use crate::{AuthBackend, AuthUser};
+use crate::{AuthBackend, AuthUser, VerificationTokenIssueParams};
 
 use super::{TestContext, TestUser};
 
@@ -30,12 +30,12 @@ pub async fn email_confirm_marks_user_confirmed<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::EmailConfirm,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::EmailConfirm,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -79,12 +79,12 @@ pub async fn email_confirm_supports_get_link_flow<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::EmailConfirm,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::EmailConfirm,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -128,12 +128,12 @@ pub async fn password_reset_updates_password_and_revokes_sessions<C: TestContext
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::PasswordReset,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::PasswordReset,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -569,7 +569,12 @@ async fn verification_token_seed<C: TestContext>(
     let token = token_generate();
     let token_hash = token_hash_sha256(&token);
     ctx.backend()
-        .verification_token_issue(user_id, &token_hash, token_type, expires_at)
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id,
+            token_hash: &token_hash,
+            token_type,
+            expires_at,
+        })
         .await
         .expect("create verification token");
     token

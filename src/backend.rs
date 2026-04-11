@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::AuthError;
-use crate::extractors::CurrentUser;
+use crate::extractors::RequestUser;
 use crate::verification::VerificationTokenType;
 
 /// Minimal user interface required by `fast-auth`.
@@ -21,7 +21,7 @@ use crate::verification::VerificationTokenType;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use chrono::{DateTime, Utc};
 /// use fast_auth::AuthUser;
 /// use uuid::Uuid;
@@ -60,9 +60,127 @@ pub trait AuthUser: Send + Sync + Clone {
     fn created_at(&self) -> DateTime<Utc>;
 }
 
+/// Fully resolved authenticated user context.
+///
+/// Unlike [`RequestUser`], this shape is hydrated from backend storage and is
+/// safe to use for auth responses, hooks, and token generation.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct HydratedUser {
+    /// Stable authenticated user identifier.
+    pub user_id: Uuid,
+    /// Normalized user email address.
+    pub email: String,
+    /// SQL auth role applied to database connections.
+    pub role: String,
+    /// Email confirmation timestamp, if confirmed.
+    pub email_confirmed_at: Option<DateTime<Utc>>,
+    /// Active organization identifier.
+    pub organization_id: Uuid,
+    /// Active organization role.
+    pub organization_role: OrganizationRole,
+    /// Active organization display name.
+    pub organization_name: String,
+}
+
+/// Result of creating one new user account.
+#[derive(Debug, Clone)]
+pub struct UserCreated<U> {
+    /// Newly persisted user record.
+    pub user: U,
+    /// Fully resolved auth context for that new user.
+    pub hydrated_user: HydratedUser,
+}
+
+/// Backend error kinds that map to stable public auth errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthBackendErrorKind {
+    /// Backend rejected invalid credentials.
+    InvalidCredentials,
+    /// Backend detected a duplicate user.
+    UserAlreadyExists,
+    /// Backend rejected an invalid or revoked refresh token.
+    RefreshTokenInvalid,
+    /// Backend rejected an invalid verification or API token.
+    InvalidToken,
+    /// Backend could not find the requested API key.
+    ApiKeyNotFound,
+    /// Backend could not find the requested organization or membership.
+    OrganizationNotFound,
+    /// Backend could not find the requested organization invite.
+    OrganizationInviteNotFound,
+    /// Backend denied the requested action.
+    Forbidden,
+    /// Backend could not find the requested user.
+    UserNotFound,
+    /// Backend hit one unexpected internal failure.
+    Backend,
+}
+
+/// Parameters for creating one new user.
+#[derive(Debug, Clone, Copy)]
+pub struct UserCreateParams<'a> {
+    /// Normalized email address to persist.
+    pub email: &'a str,
+    /// Password hash to store at rest.
+    pub password_hash: &'a str,
+}
+
+/// Parameters for creating one API key.
+#[derive(Debug, Clone, Copy)]
+pub struct ApiKeyCreateParams<'a> {
+    /// Owning organization identifier.
+    pub organization_id: Uuid,
+    /// User that created the key.
+    pub created_by_user_id: Uuid,
+    /// Caller-visible API key name.
+    pub name: &'a str,
+    /// Stable visible key prefix.
+    pub key_prefix: &'a str,
+    /// Hashed key material stored at rest.
+    pub key_hash: &'a str,
+}
+
+/// Parameters for issuing one refresh token after password verification.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionIssueIfPasswordHashParams<'a> {
+    /// User that is signing in.
+    pub user_id: Uuid,
+    /// Password hash observed before the sign-in transaction.
+    pub current_password_hash: &'a str,
+    /// Hashed refresh token stored at rest.
+    pub refresh_token_hash: &'a str,
+    /// Refresh token expiry timestamp.
+    pub expires_at: DateTime<Utc>,
+}
+
+/// Parameters for rotating one refresh token.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionExchangeParams<'a> {
+    /// Currently active refresh token hash that must be consumed.
+    pub current_refresh_token_hash: &'a str,
+    /// Replacement refresh token hash to insert.
+    pub next_refresh_token_hash: &'a str,
+    /// Expiry timestamp for the replacement refresh token.
+    pub next_expires_at: DateTime<Utc>,
+}
+
+/// Parameters for issuing one verification token.
+#[derive(Debug, Clone, Copy)]
+pub struct VerificationTokenIssueParams<'a> {
+    /// User that owns the token.
+    pub user_id: Uuid,
+    /// Hashed token stored at rest.
+    pub token_hash: &'a str,
+    /// Verification token kind.
+    pub token_type: VerificationTokenType,
+    /// Expiry timestamp for the token.
+    pub expires_at: DateTime<Utc>,
+}
+
 /// Organization membership role exposed by auth.
 ///
-/// This role is embedded in [`CurrentUser`], organization membership responses,
+/// This role is embedded in [`RequestUser`] and [`HydratedUser`],
+/// organization membership responses,
 /// and invitations so backends and HTTP handlers can share one stable
 /// authorization vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -156,9 +274,25 @@ pub struct OrganizationInviteWithSecret {
 /// Implement this for your backend error type so handlers can make consistent
 /// decisions without parsing error messages.
 pub trait AuthBackendError: std::error::Error + Send + Sync + 'static {
+    /// Returns the stable public error kind for this backend error.
+    fn kind(&self) -> AuthBackendErrorKind;
+
     /// Maps this backend error to the public auth error type.
     fn auth_error(&self) -> AuthError {
-        AuthError::Backend(self.to_string())
+        match self.kind() {
+            AuthBackendErrorKind::InvalidCredentials => AuthError::InvalidCredentials,
+            AuthBackendErrorKind::UserAlreadyExists => AuthError::UserAlreadyExists,
+            AuthBackendErrorKind::RefreshTokenInvalid => AuthError::RefreshTokenInvalid,
+            AuthBackendErrorKind::InvalidToken => AuthError::InvalidToken,
+            AuthBackendErrorKind::ApiKeyNotFound => AuthError::ApiKeyNotFound,
+            AuthBackendErrorKind::OrganizationNotFound => AuthError::OrganizationNotFound,
+            AuthBackendErrorKind::OrganizationInviteNotFound => {
+                AuthError::OrganizationInviteNotFound
+            }
+            AuthBackendErrorKind::Forbidden => AuthError::Forbidden,
+            AuthBackendErrorKind::UserNotFound => AuthError::UserNotFound,
+            AuthBackendErrorKind::Backend => AuthError::Backend(self.to_string()),
+        }
     }
 }
 
@@ -229,9 +363,14 @@ pub struct ApiKeyWithSecret {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use chrono::{DateTime, Utc};
-/// use fast_auth::{AuthBackend, AuthUser, CurrentUser, OrganizationRole};
+/// use fast_auth::{
+///     ApiKeyCreateParams, AuthBackend, AuthBackendError, AuthBackendErrorKind, RequestUser,
+///     AuthUser, OrganizationRole, HydratedUser, SessionExchangeParams,
+///     SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
+///     VerificationTokenIssueParams,
+/// };
 /// use uuid::Uuid;
 ///
 /// #[derive(Clone)]
@@ -245,7 +384,11 @@ pub struct ApiKeyWithSecret {
 ///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "error") }
 /// }
 /// impl std::error::Error for MyError {}
-/// impl fast_auth::AuthBackendError for MyError {}
+/// impl AuthBackendError for MyError {
+///     fn kind(&self) -> AuthBackendErrorKind {
+///         AuthBackendErrorKind::Backend
+///     }
+/// }
 ///
 /// impl AuthUser for MyUser {
 ///     fn id(&self) -> Uuid { Uuid::nil() }
@@ -256,34 +399,34 @@ pub struct ApiKeyWithSecret {
 ///     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
 /// }
 ///
-/// fn current_user() -> CurrentUser {
-///     CurrentUser {
+/// fn hydrated_user() -> HydratedUser {
+///     HydratedUser {
 ///         user_id: Uuid::nil(),
 ///         email: String::new(),
 ///         role: "authenticated".to_string(),
 ///         email_confirmed_at: Some(Utc::now()),
-///         created_at: Some(Utc::now()),
 ///         organization_id: Uuid::nil(),
 ///         organization_role: OrganizationRole::Owner,
-///         organization_name: Some(String::new()),
+///         organization_name: String::new(),
 ///     }
 /// }
 ///
 /// impl AuthBackend for MyBackend {
 ///     type User = MyUser;
 ///     type Error = MyError;
+///
 ///     async fn user_find_by_email(&self, _: &str) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
-///     async fn current_user_get_by_user_id(&self, _: Uuid) -> Result<Option<CurrentUser>, Self::Error> { Ok(Some(current_user())) }
-///     async fn user_create(&self, _: &str, _: &str) -> Result<Self::User, Self::Error> { Err(MyError) }
-///     async fn api_key_create(&self, _: Uuid, _: Uuid, _: &str, _: &str, _: &str) -> Result<fast_auth::ApiKey, Self::Error> { Err(MyError) }
+///     async fn user_create(&self, _: UserCreateParams<'_>) -> Result<UserCreated<Self::User>, Self::Error> { Err(MyError) }
+///     async fn hydrated_user_get(&self, _: &RequestUser) -> Result<Option<HydratedUser>, Self::Error> { Ok(Some(hydrated_user())) }
+///     async fn api_key_create(&self, _: ApiKeyCreateParams<'_>) -> Result<fast_auth::ApiKey, Self::Error> { Err(MyError) }
 ///     async fn api_keys_list(&self, _: Uuid, _: common::list::ListQuery<fast_auth::ApiKeyListSortBy>) -> Result<common::list::ListPageResult<fast_auth::ApiKey>, Self::Error> { Err(MyError) }
 ///     async fn api_key_delete(&self, _: Uuid, _: Uuid) -> Result<fast_auth::ApiKey, Self::Error> { Err(MyError) }
-///     async fn api_key_authenticate(&self, _: &str, _: DateTime<Utc>) -> Result<Option<CurrentUser>, Self::Error> { Ok(Some(current_user())) }
+///     async fn api_key_authenticate(&self, _: &str, _: DateTime<Utc>) -> Result<Option<RequestUser>, Self::Error> { Ok(None) }
 ///     async fn session_issue(&self, _: Uuid, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
-///     async fn session_issue_if_password_hash(&self, _: Uuid, _: &str, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn session_issue_if_password_hash(&self, _: SessionIssueIfPasswordHashParams<'_>) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
 ///     async fn session_revoke_by_refresh_token_hash(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
-///     async fn session_exchange(&self, _: &str, _: &str, _: DateTime<Utc>) -> Result<Uuid, Self::Error> { Ok(Uuid::nil()) }
-///     async fn verification_token_issue(&self, _: Uuid, _: &str, _: fast_auth::verification::VerificationTokenType, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+///     async fn session_exchange(&self, _: SessionExchangeParams<'_>) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
+///     async fn verification_token_issue(&self, _: VerificationTokenIssueParams<'_>) -> Result<(), Self::Error> { Ok(()) }
 ///     async fn email_confirm_apply(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
 ///     async fn password_reset_apply(&self, _: &str, _: &str) -> Result<(), Self::Error> { Ok(()) }
 ///     async fn organizations_list(&self, _: Uuid) -> Result<Vec<fast_auth::OrganizationMember>, Self::Error> { Ok(vec![]) }
@@ -291,14 +434,14 @@ pub struct ApiKeyWithSecret {
 ///     async fn organization_get(&self, _: Uuid, _: Uuid) -> Result<Option<fast_auth::OrganizationMember>, Self::Error> { Ok(None) }
 ///     async fn organization_update(&self, _: Uuid, _: Uuid, _: &str) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
 ///     async fn organization_delete(&self, _: Uuid, _: Uuid) -> Result<fast_auth::Organization, Self::Error> { Err(MyError) }
-///     async fn organization_switch(&self, _: Uuid, _: Uuid) -> Result<CurrentUser, Self::Error> { Ok(current_user()) }
+///     async fn organization_switch(&self, _: Uuid, _: Uuid) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
 ///     async fn organization_members_list(&self, _: Uuid, _: Uuid) -> Result<Vec<fast_auth::OrganizationMember>, Self::Error> { Ok(vec![]) }
 ///     async fn organization_member_update_role(&self, _: Uuid, _: Uuid, _: Uuid, _: OrganizationRole) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
 ///     async fn organization_member_delete(&self, _: Uuid, _: Uuid, _: Uuid) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
 ///     async fn organization_invite_create(&self, _: Uuid, _: Uuid, _: &str, _: OrganizationRole) -> Result<fast_auth::OrganizationInviteWithSecret, Self::Error> { Err(MyError) }
 ///     async fn organization_invites_list(&self, _: Uuid, _: Uuid) -> Result<Vec<fast_auth::OrganizationInvite>, Self::Error> { Ok(vec![]) }
 ///     async fn organization_invite_revoke(&self, _: Uuid, _: Uuid, _: Uuid) -> Result<fast_auth::OrganizationInvite, Self::Error> { Err(MyError) }
-///     async fn organization_invite_accept(&self, _: Uuid, _: &str) -> Result<CurrentUser, Self::Error> { Ok(current_user()) }
+///     async fn organization_invite_accept(&self, _: Uuid, _: &str) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
 /// }
 /// ```
 pub trait AuthBackend: Clone + Send + Sync + 'static {
@@ -313,24 +456,23 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         email: &str,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Creates a new user and provisions its default organization state.
+    /// Creates a new user and provisions its default personal organization state.
     ///
     /// Must be race-safe for concurrent sign-ups with the same email.
     /// Return [`AuthError::UserAlreadyExists`] when email already exists.
     fn user_create(
         &self,
-        email: &str,
-        password_hash: &str,
-    ) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
+        params: UserCreateParams<'_>,
+    ) -> impl Future<Output = Result<UserCreated<Self::User>, Self::Error>> + Send;
 
-    /// Resolves the current authenticated user for a user id.
+    /// Resolves one fully hydrated auth context for one authenticated subject.
     ///
     /// This should return the fully hydrated auth context used by handlers and
-    /// middleware, including the active organization and organization role.
-    fn current_user_get_by_user_id(
+    /// responses, including the selected organization and organization name.
+    fn hydrated_user_get(
         &self,
-        user_id: Uuid,
-    ) -> impl Future<Output = Result<Option<CurrentUser>, Self::Error>> + Send;
+        request_user: &RequestUser,
+    ) -> impl Future<Output = Result<Option<HydratedUser>, Self::Error>> + Send;
 
     /// Creates one API key for the active organization.
     ///
@@ -339,11 +481,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// `created_by_user_id`, and return only metadata via [`ApiKey`].
     fn api_key_create(
         &self,
-        organization_id: Uuid,
-        created_by_user_id: Uuid,
-        name: &str,
-        key_prefix: &str,
-        key_hash: &str,
+        params: ApiKeyCreateParams<'_>,
     ) -> impl Future<Output = Result<ApiKey, Self::Error>> + Send;
 
     /// Lists one paginated API-key window owned by the active organization.
@@ -369,13 +507,13 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Authenticates one bearer API key and updates its last-used timestamp.
     ///
-    /// This should resolve the same [`CurrentUser`] shape cookie-backed auth
-    /// uses, but scoped to the API key's owning organization.
+    /// This should return the org-scoped request subject for the API key
+    /// without mutating the user's stored active organization.
     fn api_key_authenticate(
         &self,
         api_key: &str,
         used_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Option<CurrentUser>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<RequestUser>, Self::Error>> + Send;
 
     /// Revokes all active refresh tokens for `user_id` and inserts a new one.
     ///
@@ -401,11 +539,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// password changed concurrently.
     fn session_issue_if_password_hash(
         &self,
-        user_id: Uuid,
-        current_password_hash: &str,
-        refresh_token_hash: &str,
-        expires_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+        params: SessionIssueIfPasswordHashParams<'_>,
+    ) -> impl Future<Output = Result<HydratedUser, Self::Error>> + Send;
 
     /// Revokes a refresh token by hash.
     ///
@@ -424,25 +559,20 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// - revoke any other active refresh tokens for the same user
     /// - insert `next_refresh_token_hash` with `next_expires_at`
     ///
-    /// Returns the owner user id when successful.
+    /// Returns the refreshed hydrated user context when successful.
     /// Returns [`AuthError::RefreshTokenInvalid`] when token is invalid,
     /// expired, or revoked.
     fn session_exchange(
         &self,
-        current_refresh_token_hash: &str,
-        next_refresh_token_hash: &str,
-        next_expires_at: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Uuid, Self::Error>> + Send;
+        params: SessionExchangeParams<'_>,
+    ) -> impl Future<Output = Result<HydratedUser, Self::Error>> + Send;
 
     /// Creates a verification token and invalidates previous active token of same type.
     ///
     /// Must atomically invalidate existing active `(user_id, token_type)` token before insert.
     fn verification_token_issue(
         &self,
-        user_id: Uuid,
-        token_hash: &str,
-        token_type: VerificationTokenType,
-        expires_at: DateTime<Utc>,
+        params: VerificationTokenIssueParams<'_>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Atomically confirms email by consuming the given token hash.
@@ -513,7 +643,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Deletes one organization owned by one user.
     ///
-    /// Backends should require owner-level access and return the deleted
+    /// Backends should require owner-level access, reject deletion of the
+    /// user's default personal organization, and return the deleted
     /// organization snapshot.
     fn organization_delete(
         &self,
@@ -523,13 +654,13 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Switches the active organization for one user.
     ///
-    /// This should return the refreshed [`CurrentUser`] payload that reflects
-    /// the newly active organization.
+    /// This should return the refreshed [`HydratedUser`] payload that
+    /// reflects the newly active organization.
     fn organization_switch(
         &self,
         user_id: Uuid,
         organization_id: Uuid,
-    ) -> impl Future<Output = Result<CurrentUser, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<HydratedUser, Self::Error>> + Send;
 
     /// Lists organization members visible to one user.
     ///
@@ -543,8 +674,9 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Updates one member role inside one organization.
     ///
-    /// Backends should require owner-level access and return the updated
-    /// membership row after the role change.
+    /// Backends should require owner-level access, reject demoting a user out
+    /// of ownership in their default personal organization, and return the
+    /// updated membership row after the role change.
     fn organization_member_update_role(
         &self,
         actor_user_id: Uuid,
@@ -555,8 +687,9 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Removes one member from one organization.
     ///
-    /// Backends should enforce actor permissions and return the removed
-    /// membership row.
+    /// Backends should enforce actor permissions, reject removing a user from
+    /// their default personal organization, and return the removed membership
+    /// row.
     fn organization_member_delete(
         &self,
         actor_user_id: Uuid,
@@ -601,10 +734,10 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// Accepts one organization invitation for an authenticated user.
     ///
     /// This should validate the invite token, create the membership, and return
-    /// the refreshed [`CurrentUser`] payload for the user after acceptance.
+    /// the refreshed [`HydratedUser`] payload for the user after acceptance.
     fn organization_invite_accept(
         &self,
         user_id: Uuid,
         token: &str,
-    ) -> impl Future<Output = Result<CurrentUser, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<HydratedUser, Self::Error>> + Send;
 }

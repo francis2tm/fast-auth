@@ -1,7 +1,7 @@
 //! Handler for getting current user information.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthResponse, CurrentUser, EmailSender, auth_response_build,
+    Auth, AuthBackend, AuthHooks, AuthResponse, EmailSender, RequestUser, auth_response_build,
     error::AuthError,
 };
 use axum::{Json, Router, extract::State, routing::get};
@@ -42,14 +42,14 @@ pub fn me_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<
     )
 )]
 pub async fn me_get<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_user: CurrentUser,
+    request_user: RequestUser,
     State(auth): State<Auth<B, H, E>>,
 ) -> Result<Json<AuthResponse>, AuthError> {
-    let current_user = auth
+    let hydrated_user = auth
         .backend()
-        .current_user_get_by_user_id(current_user.user_id)
+        .hydrated_user_get(&request_user)
         .await
         .map_err(AuthError::from_backend)?
         .ok_or(AuthError::UserNotFound)?;
-    Ok(Json(auth_response_build(&current_user)?))
+    Ok(Json(auth_response_build(&hydrated_user)))
 }

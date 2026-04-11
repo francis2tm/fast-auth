@@ -1,7 +1,8 @@
 //! Handler for user sign-in.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, auth_response_with_cookies_build,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, SessionIssueIfPasswordHashParams,
+    auth_response_with_cookies_build,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
     email::email_validate_normalize,
     error::AuthError,
@@ -86,30 +87,24 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     let (refresh_token, refresh_token_hash) = token_with_hash_generate();
     let refresh_token_expiry = token_expiry_calculate(config.refresh_token_expiry);
 
-    auth.backend()
-        .session_issue_if_password_hash(
-            user.id(),
-            user.password_hash(),
-            &refresh_token_hash,
-            refresh_token_expiry,
-        )
+    let hydrated_user = auth
+        .backend()
+        .session_issue_if_password_hash(SessionIssueIfPasswordHashParams {
+            user_id: user.id(),
+            current_password_hash: user.password_hash(),
+            refresh_token_hash: &refresh_token_hash,
+            expires_at: refresh_token_expiry,
+        })
         .await
         .map_err(AuthError::from_backend)?;
-
-    let current_user = auth
-        .backend()
-        .current_user_get_by_user_id(user.id())
-        .await
-        .map_err(AuthError::from_backend)?
-        .ok_or(AuthError::UserNotFound)?;
-    let access_token = access_token_generate(&current_user, config)?;
+    let access_token = access_token_generate(&hydrated_user, config)?;
 
     // Call the on_sign_in hook only after session issuance succeeds.
-    auth.hooks().on_sign_in(&current_user).await;
+    auth.hooks().on_sign_in(&hydrated_user).await;
 
     let jar = axum_extra::extract::cookie::CookieJar::new()
         .add(access_token_cookie_create(access_token, config))
         .add(refresh_token_cookie_create(refresh_token, config));
 
-    auth_response_with_cookies_build(jar, &current_user)
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }

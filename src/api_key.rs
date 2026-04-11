@@ -1,7 +1,7 @@
 //! API key generation, parsing, and creation helpers.
 
 use crate::{
-    ApiKeyWithSecret, AuthBackend, error::AuthError, password::password_hash,
+    ApiKeyCreateParams, ApiKeyWithSecret, AuthBackend, error::AuthError, password::password_hash,
     tokens::token_generate,
 };
 use uuid::Uuid;
@@ -37,13 +37,13 @@ pub async fn api_key_issue<B: AuthBackend>(
     let (key, key_prefix) = api_key_generate();
     let key_hash = api_key_hash(&key)?;
     let api_key = backend
-        .api_key_create(
+        .api_key_create(ApiKeyCreateParams {
             organization_id,
             created_by_user_id,
             name,
-            &key_prefix,
-            &key_hash,
-        )
+            key_prefix: &key_prefix,
+            key_hash: &key_hash,
+        })
         .await
         .map_err(AuthError::from_backend)?;
 

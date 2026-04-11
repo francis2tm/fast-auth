@@ -366,7 +366,8 @@ export type OrganizationResponse = {
 /**
  * Organization membership role exposed by auth.
  *
- * This role is embedded in [`CurrentUser`], organization membership responses,
+ * This role is embedded in [`RequestUser`] and [`HydratedUser`],
+ * organization membership responses,
  * and invitations so backends and HTTP handlers can share one stable
  * authorization vocabulary.
  */

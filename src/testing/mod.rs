@@ -6,28 +6,15 @@
 //! # Usage
 //!
 //! Implement the [`TestContext`] trait for your test infrastructure, then use
-//! the [`Suite`] to run all tests:
+//! [`test_suite!`] for one-per-case integration tests or [`Suite`] to run
+//! everything from one async entrypoint:
 //!
-//! ```ignore
-//! use fast_auth::testing::{Suite, TestContext, TestUser, RefreshTokenInfo};
-//! use fast_auth::AuthConfig;
-//! use reqwest::Client;
+//! ```rust,no_run
+//! use fast_auth::testing::{Suite, TestContext};
 //!
-//! struct MyContext { /* your app state */ }
-//!
-//! impl TestContext for MyContext {
-//!     async fn spawn() -> (String, Client, Self) {
-//!         // Start your app, return (base_url, client, context)
-//!     }
-//!
-//!     fn auth_config(&self) -> &AuthConfig { /* ... */ }
-//!     // ... other required methods
-//! }
-//!
-//! #[tokio::test]
-//! async fn run_auth_suite() {
-//!     Suite::<MyContext>::test_all().await;
-//! }
+//! # async fn auth_suite_run<C: TestContext>() {
+//! Suite::<C>::test_all().await;
+//! # }
 //! ```
 //!
 //! [`AuthBackend`]: crate::AuthBackend
@@ -369,6 +356,7 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_invite_accept_rejects_reuse::<C>().await;
         organizations::organization_member_role_gates_admin_routes::<C>().await;
         organizations::organization_delete_active_org_preserves_auth_or_is_rejected::<C>().await;
+        organizations::organization_delete_personal_org_when_inactive_is_rejected::<C>().await;
         organizations::organization_member_role_update_requires_owner::<C>().await;
         organizations::organization_admin_cannot_invite_owner::<C>().await;
         organizations::organization_role_change_is_visible_after_refresh_and_sign_in::<C>().await;
@@ -376,6 +364,8 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_admin_can_manage_members_and_invites::<C>().await;
         organizations::organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently::<C>().await;
         organizations::organization_admin_cannot_delete_owner::<C>().await;
+        organizations::organization_personal_org_membership_cannot_be_demoted_or_removed::<C>()
+            .await;
         organizations::organization_last_owner_cannot_be_demoted_or_removed::<C>().await;
 
         // Verification tests
@@ -402,7 +392,112 @@ impl<C: TestContext> Suite<C> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
+/// # use chrono::{DateTime, Utc};
+/// # use fast_auth::testing::{RefreshTokenInfo, TestContext};
+/// # use fast_auth::{
+/// #     ApiKeyCreateParams, AuthBackend, AuthBackendError, AuthBackendErrorKind, AuthConfig,
+/// #     RequestUser, AuthUser, OrganizationRole, HydratedUser, SessionExchangeParams,
+/// #     SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
+/// #     VerificationTokenIssueParams,
+/// # };
+/// # use reqwest::Client;
+/// # use uuid::Uuid;
+/// #
+/// # #[derive(Clone)]
+/// # struct MyBackend;
+/// # #[derive(Clone)]
+/// # struct MyUser;
+/// # #[derive(Debug)]
+/// # struct MyError;
+/// #
+/// # impl std::fmt::Display for MyError {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "error") }
+/// # }
+/// # impl std::error::Error for MyError {}
+/// # impl AuthBackendError for MyError {
+/// #     fn kind(&self) -> AuthBackendErrorKind { AuthBackendErrorKind::Backend }
+/// # }
+/// #
+/// # impl AuthUser for MyUser {
+/// #     fn id(&self) -> Uuid { Uuid::nil() }
+/// #     fn email(&self) -> &str { "" }
+/// #     fn password_hash(&self) -> &str { "" }
+/// #     fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { None }
+/// #     fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { None }
+/// #     fn created_at(&self) -> DateTime<Utc> { Utc::now() }
+/// # }
+/// #
+/// # fn hydrated_user() -> HydratedUser {
+/// #     HydratedUser {
+/// #         user_id: Uuid::nil(),
+/// #         email: String::new(),
+/// #         role: "authenticated".to_string(),
+/// #         email_confirmed_at: None,
+/// #         organization_id: Uuid::nil(),
+/// #         organization_role: OrganizationRole::Owner,
+/// #         organization_name: String::new(),
+/// #     }
+/// # }
+/// #
+/// # impl AuthBackend for MyBackend {
+/// #     type User = MyUser;
+/// #     type Error = MyError;
+/// #
+/// #     async fn user_find_by_email(&self, _: &str) -> Result<Option<Self::User>, Self::Error> { Ok(None) }
+/// #     async fn user_create(&self, _: UserCreateParams<'_>) -> Result<UserCreated<Self::User>, Self::Error> { Err(MyError) }
+/// #     async fn hydrated_user_get(&self, _: &RequestUser) -> Result<Option<HydratedUser>, Self::Error> { Ok(Some(hydrated_user())) }
+/// #     async fn api_key_create(&self, _: ApiKeyCreateParams<'_>) -> Result<fast_auth::ApiKey, Self::Error> { Err(MyError) }
+/// #     async fn api_keys_list(&self, _: Uuid, _: common::list::ListQuery<fast_auth::ApiKeyListSortBy>) -> Result<common::list::ListPageResult<fast_auth::ApiKey>, Self::Error> { Err(MyError) }
+/// #     async fn api_key_delete(&self, _: Uuid, _: Uuid) -> Result<fast_auth::ApiKey, Self::Error> { Err(MyError) }
+/// #     async fn api_key_authenticate(&self, _: &str, _: DateTime<Utc>) -> Result<Option<RequestUser>, Self::Error> { Ok(None) }
+/// #     async fn session_issue(&self, _: Uuid, _: &str, _: DateTime<Utc>) -> Result<(), Self::Error> { Ok(()) }
+/// #     async fn session_issue_if_password_hash(&self, _: SessionIssueIfPasswordHashParams<'_>) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
+/// #     async fn session_revoke_by_refresh_token_hash(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
+/// #     async fn session_exchange(&self, _: SessionExchangeParams<'_>) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
+/// #     async fn verification_token_issue(&self, _: VerificationTokenIssueParams<'_>) -> Result<(), Self::Error> { Ok(()) }
+/// #     async fn email_confirm_apply(&self, _: &str) -> Result<(), Self::Error> { Ok(()) }
+/// #     async fn password_reset_apply(&self, _: &str, _: &str) -> Result<(), Self::Error> { Ok(()) }
+/// #     async fn organizations_list(&self, _: Uuid) -> Result<Vec<fast_auth::OrganizationMember>, Self::Error> { Ok(vec![]) }
+/// #     async fn organization_create(&self, _: Uuid, _: &str) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
+/// #     async fn organization_get(&self, _: Uuid, _: Uuid) -> Result<Option<fast_auth::OrganizationMember>, Self::Error> { Ok(None) }
+/// #     async fn organization_update(&self, _: Uuid, _: Uuid, _: &str) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
+/// #     async fn organization_delete(&self, _: Uuid, _: Uuid) -> Result<fast_auth::Organization, Self::Error> { Err(MyError) }
+/// #     async fn organization_switch(&self, _: Uuid, _: Uuid) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
+/// #     async fn organization_members_list(&self, _: Uuid, _: Uuid) -> Result<Vec<fast_auth::OrganizationMember>, Self::Error> { Ok(vec![]) }
+/// #     async fn organization_member_update_role(&self, _: Uuid, _: Uuid, _: Uuid, _: OrganizationRole) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
+/// #     async fn organization_member_delete(&self, _: Uuid, _: Uuid, _: Uuid) -> Result<fast_auth::OrganizationMember, Self::Error> { Err(MyError) }
+/// #     async fn organization_invite_create(&self, _: Uuid, _: Uuid, _: &str, _: OrganizationRole) -> Result<fast_auth::OrganizationInviteWithSecret, Self::Error> { Err(MyError) }
+/// #     async fn organization_invites_list(&self, _: Uuid, _: Uuid) -> Result<Vec<fast_auth::OrganizationInvite>, Self::Error> { Ok(vec![]) }
+/// #     async fn organization_invite_revoke(&self, _: Uuid, _: Uuid, _: Uuid) -> Result<fast_auth::OrganizationInvite, Self::Error> { Err(MyError) }
+/// #     async fn organization_invite_accept(&self, _: Uuid, _: &str) -> Result<HydratedUser, Self::Error> { Ok(hydrated_user()) }
+/// # }
+/// #
+/// # struct MyContext {
+/// #     config: AuthConfig,
+/// #     backend: MyBackend,
+/// # }
+/// #
+/// # impl TestContext for MyContext {
+/// #     type User = MyUser;
+/// #
+/// #     fn spawn() -> impl std::future::Future<Output = (String, Client, Self)> + Send {
+/// #         async {
+/// #             (
+/// #                 "http://127.0.0.1:3000".to_string(),
+/// #                 Client::new(),
+/// #                 Self { config: AuthConfig::default(), backend: MyBackend },
+/// #             )
+/// #         }
+/// #     }
+/// #
+/// #     fn auth_config(&self) -> &AuthConfig { &self.config }
+/// #     fn backend(&self) -> &impl AuthBackend { &self.backend }
+/// #     fn refresh_token_get(&self, _: &str) -> impl std::future::Future<Output = Option<RefreshTokenInfo>> + Send { async { None } }
+/// #     fn refresh_token_expire(&self, _: &str) -> impl std::future::Future<Output = ()> + Send { async {} }
+/// #     fn user_password_hash_set(&self, _: Uuid, _: &str) -> impl std::future::Future<Output = ()> + Send { async {} }
+/// # }
+/// #
 /// fast_auth::test_suite!(MyContext);
 /// ```
 #[macro_export]
@@ -614,6 +709,11 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_delete_personal_org_when_inactive_is_rejected() {
+            $crate::testing::organizations::organization_delete_personal_org_when_inactive_is_rejected::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_member_role_update_requires_owner() {
             $crate::testing::organizations::organization_member_role_update_requires_owner::<$context>().await;
         }
@@ -646,6 +746,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn organization_admin_cannot_delete_owner() {
             $crate::testing::organizations::organization_admin_cannot_delete_owner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_personal_org_membership_cannot_be_demoted_or_removed() {
+            $crate::testing::organizations::organization_personal_org_membership_cannot_be_demoted_or_removed::<$context>().await;
         }
 
         #[tokio::test]

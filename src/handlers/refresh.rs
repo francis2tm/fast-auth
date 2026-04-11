@@ -44,7 +44,7 @@ pub async fn refresh<B: AuthBackend, H: AuthHooks, E: EmailSender>(
         .get(&config.cookie_refresh_token_name)
         .map(|cookie| cookie.value().to_string())
         .ok_or(AuthError::RefreshTokenInvalid)?;
-    let (jar, current_user) = token_cookies_refresh(&auth, &refresh_token).await?;
+    let (jar, hydrated_user) = token_cookies_refresh(&auth, &refresh_token).await?;
 
-    auth_response_with_cookies_build(jar, &current_user)
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }

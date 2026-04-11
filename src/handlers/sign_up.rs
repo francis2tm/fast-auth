@@ -1,7 +1,7 @@
 //! Handler for user sign-up.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, auth_response_build,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, UserCreateParams, auth_response_build,
     auth_response_with_cookies_build,
     email::email_validate_normalize,
     error::AuthError,
@@ -74,20 +74,18 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     let hashed_password = password_hash(&req.password)?;
 
     // Create user via backend
-    let user = auth
+    let created = auth
         .backend()
-        .user_create(&email, &hashed_password)
+        .user_create(UserCreateParams {
+            email: &email,
+            password_hash: &hashed_password,
+        })
         .await
         .map_err(AuthError::from_backend)?;
+    let user = created.user;
+    let hydrated_user = created.hydrated_user;
 
-    let current_user = auth
-        .backend()
-        .current_user_get_by_user_id(user.id())
-        .await
-        .map_err(AuthError::from_backend)?
-        .ok_or(AuthError::UserNotFound)?;
-
-    auth.hooks().on_sign_up(&current_user).await;
+    auth.hooks().on_sign_up(&hydrated_user).await;
 
     // If email confirmation is required, do not set cookies until email is confirmed
     if config.email_confirmation_require && user.email_confirmed_at().is_none() {
@@ -98,10 +96,10 @@ pub async fn sign_up<B: AuthBackend, H: AuthHooks, E: EmailSender>(
                 "Failed to issue confirmation token during sign-up"
             );
         }
-        return Ok(Json(auth_response_build(&current_user)?).into_response());
+        return Ok(Json(auth_response_build(&hydrated_user)).into_response());
     }
 
     // Generate tokens and cookies
-    let jar = token_cookies_generate(&auth, &current_user).await?;
-    auth_response_with_cookies_build(jar, &current_user)
+    let jar = token_cookies_generate(&auth, &hydrated_user).await?;
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }

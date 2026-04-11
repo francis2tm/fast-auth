@@ -1,7 +1,7 @@
 //! Handlers for password reset.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, VerificationTokenIssueParams,
     email::email_validate_normalize,
     error::AuthError,
     password::{password_hash, password_validate},
@@ -105,12 +105,12 @@ pub async fn password_forgot<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
         // Store token
         auth.backend()
-            .verification_token_issue(
-                user.id(),
-                &hash,
-                VerificationTokenType::PasswordReset,
+            .verification_token_issue(VerificationTokenIssueParams {
+                user_id: user.id(),
+                token_hash: &hash,
+                token_type: VerificationTokenType::PasswordReset,
                 expires_at,
-            )
+            })
             .await
             .map_err(AuthError::from_backend)?;
 

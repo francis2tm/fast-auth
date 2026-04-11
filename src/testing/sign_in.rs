@@ -9,6 +9,7 @@ use crate::AuthError;
 use crate::AuthResponse;
 use crate::AuthUser;
 use crate::OrganizationRole;
+use crate::SessionIssueIfPasswordHashParams;
 use crate::handlers::SIGN_IN_PATH;
 use crate::password::password_hash;
 use crate::tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate};
@@ -244,12 +245,12 @@ pub async fn session_issue_rejects_stale_password_hash<C: TestContext>() {
 
     let error = ctx
         .backend()
-        .session_issue_if_password_hash(
-            stored_user.id(),
-            &stale_password_hash,
-            &next_refresh_hash,
-            next_expires_at,
-        )
+        .session_issue_if_password_hash(SessionIssueIfPasswordHashParams {
+            user_id: stored_user.id(),
+            current_password_hash: &stale_password_hash,
+            refresh_token_hash: &next_refresh_hash,
+            expires_at: next_expires_at,
+        })
         .await
         .expect_err("stale password hash must fail");
 

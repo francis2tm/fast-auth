@@ -19,195 +19,96 @@ An authentication library for Axum with JWT access tokens, rotating refresh toke
 
 ## Quick Start
 
-### 1. Implement `AuthUser`, backend error, and `AuthBackend`
+### 1. Implement `AuthUser`, one typed backend error, and `AuthBackend`
 
-```rust,ignore
-use chrono::{DateTime, Utc};
-use common::list::{ListPageResult, ListQuery};
-use fast_auth::{AuthBackend, AuthBackendError, AuthError, AuthUser};
-use thiserror::Error;
-use uuid::Uuid;
+`RequestUser` is the request-scoped auth principal extracted from middleware.
+`HydratedUser` is the fully hydrated auth context used for responses,
+hooks, and token issuance.
 
-#[derive(Clone)]
-struct MyUser {
-    id: Uuid,
-    email: String,
-    password_hash: String,
-    email_confirmed_at: Option<DateTime<Utc>>,
-    last_sign_in_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-}
+The compile-checked rustdoc on `AuthBackend` shows the full backend contract,
+including the small set of grouped input structs that remain part of the API:
 
-impl AuthUser for MyUser {
-    fn id(&self) -> Uuid { self.id }
-    fn email(&self) -> &str { &self.email }
-    fn password_hash(&self) -> &str { &self.password_hash }
-    fn email_confirmed_at(&self) -> Option<DateTime<Utc>> { self.email_confirmed_at }
-    fn last_sign_in_at(&self) -> Option<DateTime<Utc>> { self.last_sign_in_at }
-    fn created_at(&self) -> DateTime<Utc> { self.created_at }
-}
-
-#[derive(Debug, Error)]
-enum MyError {
-    #[error("user already exists")]
-    UserAlreadyExists,
-    #[error("invalid credentials")]
-    InvalidCredentials,
-    #[error("refresh token invalid")]
-    RefreshTokenInvalid,
-    #[error("verification token invalid")]
-    InvalidToken,
-    #[error("unexpected: {0}")]
-    Unexpected(String),
-}
-
-impl AuthBackendError for MyError {
-    fn auth_error(&self) -> AuthError {
-        match self {
-            MyError::UserAlreadyExists => AuthError::UserAlreadyExists,
-            MyError::InvalidCredentials => AuthError::InvalidCredentials,
-            MyError::RefreshTokenInvalid => AuthError::RefreshTokenInvalid,
-            MyError::InvalidToken => AuthError::InvalidToken,
-            MyError::Unexpected(message) => AuthError::Backend(message.clone()),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct MyBackend;
-
-impl AuthBackend for MyBackend {
-    type User = MyUser;
-    type Error = MyError;
-
-    async fn user_find_by_email(&self, _email: &str) -> Result<Option<Self::User>, Self::Error> {
-        Ok(None)
-    }
-
-    async fn current_user_get_by_user_id(
-        &self,
-        _user_id: Uuid,
-    ) -> Result<Option<fast_auth::CurrentUser>, Self::Error> {
-        Ok(None)
-    }
-
-    async fn user_create(&self, _email: &str, _password_hash: &str) -> Result<Self::User, Self::Error> {
-        Err(MyError::UserAlreadyExists)
-    }
-
-    async fn api_key_create(
-        &self,
-        _user_id: Uuid,
-        _name: &str,
-        _key_prefix: &str,
-        _key_hash: &str,
-    ) -> Result<fast_auth::ApiKey, Self::Error> {
-        Err(MyError::Unexpected("not implemented".to_string()))
-    }
-
-    async fn api_keys_list(
-        &self,
-        _user_id: Uuid,
-        query: ListQuery<fast_auth::ApiKeyListSortBy>,
-    ) -> Result<ListPageResult<fast_auth::ApiKey>, Self::Error> {
-        Ok(query.result_build(Vec::new(), 0))
-    }
-
-    async fn api_key_delete(
-        &self,
-        _user_id: Uuid,
-        _api_key_id: Uuid,
-    ) -> Result<fast_auth::ApiKey, Self::Error> {
-        Err(MyError::Unexpected("not implemented".to_string()))
-    }
-
-    async fn api_key_authenticate(
-        &self,
-        _api_key: &str,
-        _used_at: DateTime<Utc>,
-    ) -> Result<Option<Self::User>, Self::Error> {
-        Ok(None)
-    }
-
-    async fn session_issue(&self, _user_id: Uuid, _refresh_token_hash: &str, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    async fn session_issue_if_password_hash(&self, _user_id: Uuid, _current_password_hash: &str, _refresh_token_hash: &str, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
-        Err(MyError::InvalidCredentials)
-    }
-
-    async fn session_revoke_by_refresh_token_hash(&self, _refresh_token_hash: &str) -> Result<(), Self::Error> {
-        Err(MyError::RefreshTokenInvalid)
-    }
-
-    async fn session_exchange(&self, _current_refresh_token_hash: &str, _next_refresh_token_hash: &str, _next_expires_at: DateTime<Utc>) -> Result<Uuid, Self::Error> {
-        Err(MyError::RefreshTokenInvalid)
-    }
-
-    async fn verification_token_issue(&self, _user_id: Uuid, _token_hash: &str, _token_type: fast_auth::verification::VerificationTokenType, _expires_at: DateTime<Utc>) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    async fn email_confirm_apply(&self, _token_hash: &str) -> Result<(), Self::Error> {
-        Err(MyError::InvalidToken)
-    }
-
-    async fn password_reset_apply(&self, _token_hash: &str, _password_hash: &str) -> Result<(), Self::Error> {
-        Err(MyError::InvalidToken)
-    }
-}
-```
+- `UserCreateParams`
+- `ApiKeyCreateParams`
+- `SessionIssueIfPasswordHashParams`
+- `SessionExchangeParams`
+- `VerificationTokenIssueParams`
 
 ### 2. Build auth and mount routes + middleware
 
-```rust,ignore
+```rust,no_run
 use axum::{extract::FromRef, middleware, Router};
-use fast_auth::{Auth, AuthConfig};
+use fast_auth::{Auth, AuthBackend, AuthConfig};
 
-let backend = MyBackend;
+# #[derive(Clone)]
+# struct AppState<B: AuthBackend> {
+#     auth: Auth<B>,
+# }
+# impl<B: AuthBackend> FromRef<AppState<B>> for Auth<B> {
+#     fn from_ref(state: &AppState<B>) -> Self {
+#         state.auth.clone()
+#     }
+# }
+# fn app_build<B: AuthBackend>(backend: B) -> Result<(), fast_auth::AuthConfigError> {
 let mut config = AuthConfig::default();
 config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
 let auth = Auth::new(config, backend)?;
-
-#[derive(Clone)]
-struct AppState {
-    auth: Auth<MyBackend>,
-}
-
-impl FromRef<AppState> for Auth<MyBackend> {
-    fn from_ref(state: &AppState) -> Self {
-        state.auth.clone()
-    }
-}
-
 let app_state = AppState { auth: auth.clone() };
 
-let app = Router::new()
-    .merge(auth.routes::<AppState>())
+let app: Router = Router::new()
+    .merge(auth.routes::<AppState<B>>())
     .layer(middleware::from_fn_with_state(
         auth.clone(),
-        fast_auth::middleware::base::<MyBackend, (), ()>,
+        fast_auth::middleware::base::<B, (), ()>,
     ))
     .with_state(app_state);
+# let _ = app;
+# Ok(())
+# }
 ```
+
+### 3. Add the conformance test suite
+
+```rust,no_run
+use fast_auth::testing::{Suite, TestContext};
+
+# async fn auth_suite_run<C: TestContext>() {
+Suite::<C>::test_all().await;
+# }
+```
+
+The compile-checked docs on `fast_auth::testing::test_suite!` show a minimal
+`TestContext` implementation shape.
 
 ## Endpoints
 
-| Method | Path                       |
-| ------ | -------------------------- |
-| POST   | `/auth/api-keys`           |
-| GET    | `/auth/api-keys`           |
-| DELETE | `/auth/api-keys/{id}`      |
-| POST   | `/auth/sign-up`            |
-| POST   | `/auth/sign-in`            |
-| POST   | `/auth/refresh`            |
-| POST   | `/auth/sign-out`           |
-| GET    | `/auth/me`                 |
-| POST   | `/auth/email/confirm/send` |
-| GET    | `/auth/email/confirm`      |
-| POST   | `/auth/password/forgot`    |
-| POST   | `/auth/password/reset`     |
+| Method | Path                                                         |
+| ------ | ------------------------------------------------------------ |
+| POST   | `/auth/sign-up`                                              |
+| POST   | `/auth/sign-in`                                              |
+| POST   | `/auth/refresh`                                              |
+| POST   | `/auth/sign-out`                                             |
+| GET    | `/auth/me`                                                   |
+| POST   | `/auth/api-keys`                                             |
+| GET    | `/auth/api-keys`                                             |
+| DELETE | `/auth/api-keys/{id}`                                        |
+| GET    | `/auth/organizations`                                        |
+| POST   | `/auth/organizations`                                        |
+| GET    | `/auth/organizations/{organization_id}`                      |
+| PATCH  | `/auth/organizations/{organization_id}`                      |
+| DELETE | `/auth/organizations/{organization_id}`                      |
+| POST   | `/auth/organizations/current`                                |
+| GET    | `/auth/organizations/{organization_id}/members`              |
+| PATCH  | `/auth/organizations/{organization_id}/members/{member_user_id}`  |
+| DELETE | `/auth/organizations/{organization_id}/members/{member_user_id}`  |
+| GET    | `/auth/organizations/{organization_id}/invites`              |
+| POST   | `/auth/organizations/{organization_id}/invites`              |
+| DELETE | `/auth/organizations/{organization_id}/invites/{invite_id}`  |
+| POST   | `/auth/organizations/invites/accept`                         |
+| POST   | `/auth/email/confirm/send`                                   |
+| GET    | `/auth/email/confirm`                                        |
+| POST   | `/auth/password/forgot`                                      |
+| POST   | `/auth/password/reset`                                       |
 
 ## Protected routes
 
@@ -220,19 +121,19 @@ Cookie-backed browser sessions still use `POST /auth/refresh` when the access
 token expires. API keys are long-lived credentials managed explicitly through
 the API-key endpoints and are not refreshed.
 
-```rust,ignore
+```rust,no_run
 use axum::Json;
-use fast_auth::{CurrentAdmin, CurrentOwner, CurrentUser};
+use fast_auth::{CurrentAdmin, CurrentOwner, RequestUser};
 
-async fn user_protected_route(user: CurrentUser) -> Json<String> {
-    Json(format!("Hello, {}", user.email))
+async fn user_protected_route(request_user: RequestUser) -> Json<String> {
+    Json(format!("Hello, {}", request_user.email))
 }
 
-async fn admin_protected_route(admin: CurrentAdmin) -> Json<&'static str> {
+async fn admin_protected_route(admin: CurrentAdmin) -> Json<String> {
     Json(format!("Hello, {}", admin.email))
 }
 
-async fn owner_protected_route(owner: CurrentOwner) -> Json<&'static str> {
+async fn owner_protected_route(owner: CurrentOwner) -> Json<String> {
     Json(format!("Hello, {}", owner.email))
 }
 ```
@@ -247,6 +148,9 @@ Users can create API keys through the auth API:
 
 Keys are stored hashed at rest. The returned plaintext secret is only available
 at creation time, so callers should persist it immediately.
+
+API keys authenticate into the organization that owns the key. They do not
+mutate the user's stored active organization for cookie-backed sessions.
 
 Use API keys on protected routes with:
 
@@ -281,23 +185,12 @@ fast-auth = { version = "0.1", features = ["testing"] }
 
 Implement `TestContext` and use macro:
 
-```rust,ignore
+```rust,no_run
 use fast_auth::testing::TestContext;
 
-struct TestApp;
-
-impl TestContext for TestApp {
-    type User = MyUser;
-
-    async fn spawn() -> (String, reqwest::Client, Self) { todo!() }
-    fn auth_config(&self) -> &fast_auth::AuthConfig { todo!() }
-    fn backend(&self) -> &impl fast_auth::AuthBackend { todo!() }
-    async fn refresh_token_get(&self, _hash: &str) -> Option<fast_auth::testing::RefreshTokenInfo> { todo!() }
-    async fn refresh_token_expire(&self, _hash: &str) {}
-    async fn user_password_hash_set(&self, _user_id: uuid::Uuid, _password_hash: &str) {}
-}
-
-fast_auth::test_suite!(TestApp);
+# async fn auth_suite_run<C: TestContext>() {
+fast_auth::testing::Suite::<C>::test_all().await;
+# }
 ```
 
 ## OpenAPI

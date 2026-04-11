@@ -13,19 +13,18 @@
 //!
 //! # Quick Start
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use fast_auth::{Auth, AuthConfig};
-//! use axum::{Router, extract::FromRef};
 //!
-//! let backend = /* your AuthBackend implementation */;
-//! let secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! # fn app_build<B: fast_auth::AuthBackend>(backend: B) -> Result<(), fast_auth::AuthConfigError> {
 //! let mut config = AuthConfig::default();
-//! config.jwt_secret = secret;
-//! let auth = Auth::new(config, backend).unwrap();
+//! config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! let auth = Auth::new(config, backend)?;
 //!
-//! let app = Router::new()
-//!     .merge(auth.routes())
-//!     .with_state(auth);
+//! let app: axum::Router = auth.routes::<Auth<B>>().with_state(auth);
+//! # let _ = app;
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod api_key;
@@ -53,14 +52,15 @@ use axum::{
 };
 use axum_extra::extract::cookie::CookieJar;
 pub use backend::{
-    ApiKey, ApiKeyListSortBy, ApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser,
-    Organization, OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember,
-    OrganizationRole,
+    ApiKey, ApiKeyCreateParams, ApiKeyListSortBy, ApiKeyWithSecret, AuthBackend, AuthBackendError,
+    AuthBackendErrorKind, AuthUser, HydratedUser, Organization, OrganizationInvite,
+    OrganizationInviteWithSecret, OrganizationMember, OrganizationRole, SessionExchangeParams,
+    SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated, VerificationTokenIssueParams,
 };
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
-pub use extractors::{CurrentAdmin, CurrentOwner, CurrentUser};
+pub use extractors::{CurrentAdmin, CurrentOwner, RequestUser};
 pub use handlers::api_keys::{
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyListQuery, ApiKeySummary,
 };
@@ -101,38 +101,26 @@ pub struct AuthResponse {
     pub auth_role: String,
 }
 
-/// Return one required resolved current-user field or one internal auth error.
-fn current_user_field_require<T>(value: Option<T>, field: &'static str) -> Result<T, AuthError> {
-    value
-        .ok_or_else(|| AuthError::Internal(format!("Missing resolved current user field: {field}")))
-}
-
 /// Build one public authenticated-user response.
-pub fn auth_response_build(current_user: &CurrentUser) -> Result<AuthResponse, AuthError> {
-    Ok(AuthResponse {
+pub fn auth_response_build(hydrated_user: &HydratedUser) -> AuthResponse {
+    AuthResponse {
         user: UserResponse {
-            id: current_user.user_id.to_string(),
-            email: current_user.email.clone(),
-            email_confirmed_at: current_user.email_confirmed_at.map(|dt| dt.to_rfc3339()),
+            id: hydrated_user.user_id.to_string(),
+            email: hydrated_user.email.clone(),
+            email_confirmed_at: hydrated_user.email_confirmed_at.map(|dt| dt.to_rfc3339()),
         },
         organization: OrganizationResponse {
-            id: current_user.organization_id.to_string(),
-            name: current_user_field_require(
-                current_user.organization_name.clone(),
-                "organization_name",
-            )?,
-            role: current_user.organization_role,
+            id: hydrated_user.organization_id.to_string(),
+            name: hydrated_user.organization_name.clone(),
+            role: hydrated_user.organization_role,
         },
-        auth_role: current_user.role.clone(),
-    })
+        auth_role: hydrated_user.role.clone(),
+    }
 }
 
 /// Build one auth response with updated cookies.
-pub fn auth_response_with_cookies_build(
-    jar: CookieJar,
-    current_user: &CurrentUser,
-) -> Result<Response, AuthError> {
-    Ok((jar, Json(auth_response_build(current_user)?)).into_response())
+pub fn auth_response_with_cookies_build(jar: CookieJar, hydrated_user: &HydratedUser) -> Response {
+    (jar, Json(auth_response_build(hydrated_user))).into_response()
 }
 
 /// Hooks for auth lifecycle events (sign-up, sign-in).
@@ -142,26 +130,26 @@ pub fn auth_response_with_cookies_build(
 /// # Example
 ///
 /// ```rust,no_run
-/// use fast_auth::{AuthHooks, CurrentUser};
+/// use fast_auth::{AuthHooks, HydratedUser};
 ///
 /// #[derive(Clone)]
 /// struct MyHooks;
 ///
 /// impl AuthHooks for MyHooks {
-///     fn on_sign_up(&self, current_user: &CurrentUser) -> impl std::future::Future<Output = ()> + Send {
-///         let organization_id = current_user.organization_id;
+///     fn on_sign_up(&self, hydrated_user: &HydratedUser) -> impl std::future::Future<Output = ()> + Send {
+///         let organization_id = hydrated_user.organization_id;
 ///         async move { println!("Provisioned org {organization_id}!"); }
 ///     }
 /// }
 /// ```
 pub trait AuthHooks: Send + Sync + Clone + 'static {
     /// Called after an authenticated user is created.
-    fn on_sign_up(&self, _current_user: &CurrentUser) -> impl Future<Output = ()> + Send {
+    fn on_sign_up(&self, _hydrated_user: &HydratedUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 
     /// Called after an authenticated user signs in.
-    fn on_sign_in(&self, _current_user: &CurrentUser) -> impl Future<Output = ()> + Send {
+    fn on_sign_in(&self, _hydrated_user: &HydratedUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 }
@@ -177,13 +165,16 @@ impl AuthHooks for () {}
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use fast_auth::{Auth, AuthConfig, AuthBackend};
-/// let backend: impl AuthBackend = /* ... */;
-/// let secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// ```rust,no_run
+/// use fast_auth::{Auth, AuthConfig};
+///
+/// # fn auth_build<B: fast_auth::AuthBackend>(backend: B) -> Result<(), fast_auth::AuthConfigError> {
 /// let mut config = AuthConfig::default();
-/// config.jwt_secret = secret;
-/// let auth = Auth::new(config, backend).unwrap();
+/// config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// let auth = Auth::new(config, backend)?;
+/// # let _ = auth;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone)]
 pub struct Auth<B: AuthBackend, H: AuthHooks = (), E: EmailSender = ()> {

@@ -10,6 +10,7 @@ use crate::AuthBackendError;
 use crate::AuthError;
 use crate::AuthResponse;
 use crate::OrganizationRole;
+use crate::SessionExchangeParams;
 use crate::handlers::{ME_PATH, REFRESH_PATH};
 use crate::tokens::{
     AccessTokenClaims, token_expiry_calculate, token_hash_sha256, token_with_hash_generate,
@@ -381,12 +382,20 @@ pub async fn session_exchange_race_has_single_winner<C: TestContext>() {
 
     let exchange_a = async {
         ctx.backend()
-            .session_exchange(&current_hash, &next_hash_a, next_expires_at)
+            .session_exchange(SessionExchangeParams {
+                current_refresh_token_hash: &current_hash,
+                next_refresh_token_hash: &next_hash_a,
+                next_expires_at,
+            })
             .await
     };
     let exchange_b = async {
         ctx.backend()
-            .session_exchange(&current_hash, &next_hash_b, next_expires_at)
+            .session_exchange(SessionExchangeParams {
+                current_refresh_token_hash: &current_hash,
+                next_refresh_token_hash: &next_hash_b,
+                next_expires_at,
+            })
             .await
     };
 
