@@ -43,13 +43,15 @@ pub struct RequestUser {
     pub organization_role: OrganizationRole,
 }
 
+/// Authenticated request-user extractor constrained to admin-or-owner roles.
 #[derive(Debug, Clone)]
-pub struct CurrentAdmin(pub RequestUser);
+pub struct RequestAdmin(pub RequestUser);
 
+/// Authenticated request-user extractor constrained to owner role.
 #[derive(Debug, Clone)]
-pub struct CurrentOwner(pub RequestUser);
+pub struct RequestOwner(pub RequestUser);
 
-impl Deref for CurrentAdmin {
+impl Deref for RequestAdmin {
     type Target = RequestUser;
 
     fn deref(&self) -> &Self::Target {
@@ -57,7 +59,7 @@ impl Deref for CurrentAdmin {
     }
 }
 
-impl Deref for CurrentOwner {
+impl Deref for RequestOwner {
     type Target = RequestUser;
 
     fn deref(&self) -> &Self::Target {
@@ -102,7 +104,7 @@ where
     }
 }
 
-impl<S> FromRequestParts<S> for CurrentAdmin
+impl<S> FromRequestParts<S> for RequestAdmin
 where
     S: Send + Sync,
 {
@@ -117,7 +119,7 @@ where
     }
 }
 
-impl<S> FromRequestParts<S> for CurrentOwner
+impl<S> FromRequestParts<S> for RequestOwner
 where
     S: Send + Sync,
 {
@@ -178,20 +180,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn current_admin_allows_admin_and_owner() {
+    async fn request_admin_allows_admin_and_owner() {
         for role in [OrganizationRole::Admin, OrganizationRole::Owner] {
             let mut parts = request_parts_with_context(user_context(role));
-            CurrentAdmin::from_request_parts(&mut parts, &())
+            RequestAdmin::from_request_parts(&mut parts, &())
                 .await
                 .expect("admin or owner should pass");
         }
     }
 
     #[tokio::test]
-    async fn current_admin_rejects_member() {
+    async fn request_admin_rejects_member() {
         let mut parts = request_parts_with_context(user_context(OrganizationRole::Member));
 
-        let error = CurrentAdmin::from_request_parts(&mut parts, &())
+        let error = RequestAdmin::from_request_parts(&mut parts, &())
             .await
             .expect_err("member should fail");
 
@@ -199,15 +201,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn current_owner_allows_only_owner() {
+    async fn request_owner_allows_only_owner() {
         let mut owner_parts = request_parts_with_context(user_context(OrganizationRole::Owner));
-        CurrentOwner::from_request_parts(&mut owner_parts, &())
+        RequestOwner::from_request_parts(&mut owner_parts, &())
             .await
             .expect("owner should pass");
 
         for role in [OrganizationRole::Admin, OrganizationRole::Member] {
             let mut parts = request_parts_with_context(user_context(role));
-            let error = CurrentOwner::from_request_parts(&mut parts, &())
+            let error = RequestOwner::from_request_parts(&mut parts, &())
                 .await
                 .expect_err("non-owner should fail");
             assert!(matches!(error, AuthError::Forbidden));

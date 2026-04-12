@@ -123,17 +123,17 @@ the API-key endpoints and are not refreshed.
 
 ```rust,no_run
 use axum::Json;
-use fast_auth::{CurrentAdmin, CurrentOwner, RequestUser};
+use fast_auth::{RequestAdmin, RequestOwner, RequestUser};
 
 async fn user_protected_route(request_user: RequestUser) -> Json<String> {
     Json(format!("Hello, {}", request_user.email))
 }
 
-async fn admin_protected_route(admin: CurrentAdmin) -> Json<String> {
+async fn admin_protected_route(admin: RequestAdmin) -> Json<String> {
     Json(format!("Hello, {}", admin.email))
 }
 
-async fn owner_protected_route(owner: CurrentOwner) -> Json<String> {
+async fn owner_protected_route(owner: RequestOwner) -> Json<String> {
     Json(format!("Hello, {}", owner.email))
 }
 ```

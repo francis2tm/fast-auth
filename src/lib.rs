@@ -60,7 +60,7 @@ pub use backend::{
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
-pub use extractors::{CurrentAdmin, CurrentOwner, RequestUser};
+pub use extractors::{RequestAdmin, RequestOwner, RequestUser};
 pub use handlers::api_keys::{
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyListQuery, ApiKeySummary,
 };

@@ -1,8 +1,8 @@
 //! Organization, membership, and invitation handlers.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, CurrentAdmin, CurrentOwner, EmailSender, Organization,
-    OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember, OrganizationRole,
+    Auth, AuthBackend, AuthHooks, EmailSender, Organization, OrganizationInvite,
+    OrganizationInviteWithSecret, OrganizationMember, OrganizationRole, RequestAdmin, RequestOwner,
     RequestUser, auth_response_with_cookies_build, email::email_validate_normalize,
     error::AuthError, tokens::token_cookies_generate,
 };
@@ -180,14 +180,14 @@ async fn organizations_get<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
 #[utoipa::path(patch, path = "/{organization_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organizations_update<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
     Json(request): Json<OrganizationUpdateRequest>,
 ) -> Result<Json<OrganizationMember>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_update(current_admin.user_id, organization_id, request.name.trim())
+            .organization_update(request_admin.user_id, organization_id, request.name.trim())
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -195,13 +195,13 @@ async fn organizations_update<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
 #[utoipa::path(delete, path = "/{organization_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organizations_delete<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_owner: CurrentOwner,
+    request_owner: RequestOwner,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
 ) -> Result<Json<Organization>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_delete(current_owner.user_id, organization_id)
+            .organization_delete(request_owner.user_id, organization_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -234,13 +234,13 @@ async fn organizations_switch<B: AuthBackend, H: AuthHooks, E: EmailSender>(
 
 #[utoipa::path(get, path = "/{organization_id}/members", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_members_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
 ) -> Result<Json<Vec<OrganizationMember>>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_members_list(current_admin.user_id, organization_id)
+            .organization_members_list(request_admin.user_id, organization_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -248,7 +248,7 @@ async fn organization_members_list<B: AuthBackend, H: AuthHooks, E: EmailSender>
 
 #[utoipa::path(patch, path = "/{organization_id}/members/{member_user_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_member_update<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_owner: CurrentOwner,
+    request_owner: RequestOwner,
     State(auth): State<Auth<B, H, E>>,
     Path((organization_id, member_user_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<OrganizationRoleUpdateRequest>,
@@ -256,7 +256,7 @@ async fn organization_member_update<B: AuthBackend, H: AuthHooks, E: EmailSender
     Ok(Json(
         auth.backend()
             .organization_member_update_role(
-                current_owner.user_id,
+                request_owner.user_id,
                 organization_id,
                 member_user_id,
                 request.role,
@@ -268,13 +268,13 @@ async fn organization_member_update<B: AuthBackend, H: AuthHooks, E: EmailSender
 
 #[utoipa::path(delete, path = "/{organization_id}/members/{member_user_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_member_delete<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path((organization_id, member_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<OrganizationMember>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_member_delete(current_admin.user_id, organization_id, member_user_id)
+            .organization_member_delete(request_admin.user_id, organization_id, member_user_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -282,13 +282,13 @@ async fn organization_member_delete<B: AuthBackend, H: AuthHooks, E: EmailSender
 
 #[utoipa::path(get, path = "/{organization_id}/invites", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_invites_list<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
 ) -> Result<Json<Vec<OrganizationInvite>>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_invites_list(current_admin.user_id, organization_id)
+            .organization_invites_list(request_admin.user_id, organization_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
@@ -296,7 +296,7 @@ async fn organization_invites_list<B: AuthBackend, H: AuthHooks, E: EmailSender>
 
 #[utoipa::path(post, path = "/{organization_id}/invites", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_invite_create<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path(organization_id): Path<Uuid>,
     Json(request): Json<OrganizationInviteCreateRequest>,
@@ -305,7 +305,7 @@ async fn organization_invite_create<B: AuthBackend, H: AuthHooks, E: EmailSender
     Ok(Json(
         auth.backend()
             .organization_invite_create(
-                current_admin.user_id,
+                request_admin.user_id,
                 organization_id,
                 &email,
                 request.role,
@@ -317,13 +317,13 @@ async fn organization_invite_create<B: AuthBackend, H: AuthHooks, E: EmailSender
 
 #[utoipa::path(delete, path = "/{organization_id}/invites/{invite_id}", security(("sessionCookie" = []), ("bearerApiKey" = [])))]
 async fn organization_invite_revoke<B: AuthBackend, H: AuthHooks, E: EmailSender>(
-    current_admin: CurrentAdmin,
+    request_admin: RequestAdmin,
     State(auth): State<Auth<B, H, E>>,
     Path((organization_id, invite_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<OrganizationInvite>, AuthError> {
     Ok(Json(
         auth.backend()
-            .organization_invite_revoke(current_admin.user_id, organization_id, invite_id)
+            .organization_invite_revoke(request_admin.user_id, organization_id, invite_id)
             .await
             .map_err(AuthError::from_backend)?,
     ))
