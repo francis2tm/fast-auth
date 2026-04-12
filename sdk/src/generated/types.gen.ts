@@ -222,6 +222,10 @@ export type Organization = {
    */
   id: string;
   /**
+   * Whether this organization is private or collaborative.
+   */
+  kind: OrganizationKind;
+  /**
    * Human-readable organization name.
    */
   name: string;
@@ -325,6 +329,14 @@ export type OrganizationInviteWithSecret = OrganizationInvite & {
 };
 
 /**
+ * Organization kind exposed by auth.
+ *
+ * This distinguishes private workspaces from collaborative organizations
+ * while preserving mandatory organization scoping across the application.
+ */
+export type OrganizationKind = "personal" | "shared";
+
+/**
  * Organization membership summary exposed by auth.
  *
  * Backends return this when listing memberships or members so handlers can
@@ -359,6 +371,7 @@ export type OrganizationMember = {
  */
 export type OrganizationResponse = {
   id: string;
+  kind: OrganizationKind;
   name: string;
   role: OrganizationRole;
 };
