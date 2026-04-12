@@ -200,6 +200,7 @@ pub async fn token_cookies_refresh<B: AuthBackend, H: AuthHooks, E: EmailSender>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::OrganizationKind;
     use uuid::Uuid;
 
     fn test_config() -> AuthConfig {
@@ -219,6 +220,7 @@ mod tests {
             email_confirmed_at: None,
             organization_id: Uuid::new_v4(),
             organization_role: OrganizationRole::Owner,
+            organization_kind: OrganizationKind::Shared,
             organization_name: "Acme".to_string(),
         };
 
@@ -254,6 +256,7 @@ mod tests {
             email_confirmed_at: None,
             organization_id: Uuid::new_v4(),
             organization_role: OrganizationRole::Owner,
+            organization_kind: OrganizationKind::Shared,
             organization_name: "Acme".to_string(),
         };
 

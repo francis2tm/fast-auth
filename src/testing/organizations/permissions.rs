@@ -6,13 +6,9 @@ pub async fn organization_member_role_gates_admin_routes<C: TestContext>() {
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut member = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let member_invite = organization_invite_create(
         &base_url,
@@ -107,13 +103,9 @@ pub async fn organization_cross_org_admin_routes_return_not_found<C: TestContext
     let auth_config = ctx.auth_config();
     let owner_one = TestUser::new(&base_url, &client, auth_config).await;
     let owner_two = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner_one, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner_one, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let members_response = client
         .get(format!(
@@ -166,8 +158,9 @@ pub async fn organization_member_role_update_requires_owner<C: TestContext>() {
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut admin = TestUser::new(&base_url, &client, auth_config).await;
     let mut member = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let admin_invite = organization_invite_create(
         &base_url,
@@ -242,13 +235,9 @@ pub async fn organization_admin_cannot_invite_owner<C: TestContext>() {
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut admin = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let admin_invite = organization_invite_create(
         &base_url,
@@ -291,8 +280,9 @@ pub async fn organization_role_change_is_visible_after_refresh_and_sign_in<C: Te
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut admin = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let admin_invite = organization_invite_create(
         &base_url,
@@ -312,7 +302,12 @@ pub async fn organization_role_change_is_visible_after_refresh_and_sign_in<C: Te
         &admin_invite.token,
     )
     .await;
-    auth_response_assert(&admin_payload, &admin.email, OrganizationRole::Admin);
+    auth_response_assert(
+        &admin_payload,
+        &admin.email,
+        OrganizationRole::Admin,
+        OrganizationKind::Shared,
+    );
     let admin_user_id = Uuid::parse_str(&admin_payload.user.id).expect("admin user id");
 
     let demote_response = client
@@ -330,11 +325,21 @@ pub async fn organization_role_change_is_visible_after_refresh_and_sign_in<C: Te
     assert_eq!(demoted_member.role, OrganizationRole::Member);
 
     let refresh_payload = auth_refresh(&base_url, &client, &mut admin, auth_config).await;
-    auth_response_assert(&refresh_payload, &admin.email, OrganizationRole::Member);
+    auth_response_assert(
+        &refresh_payload,
+        &admin.email,
+        OrganizationRole::Member,
+        OrganizationKind::Shared,
+    );
     assert_eq!(refresh_payload.organization.id, organization_id.to_string());
 
     let sign_in_payload = auth_sign_in(&base_url, &client, &mut admin, auth_config).await;
-    auth_response_assert(&sign_in_payload, &admin.email, OrganizationRole::Member);
+    auth_response_assert(
+        &sign_in_payload,
+        &admin.email,
+        OrganizationRole::Member,
+        OrganizationKind::Shared,
+    );
     assert_eq!(sign_in_payload.organization.id, organization_id.to_string());
 
     let members_response = client
@@ -356,8 +361,9 @@ pub async fn organization_admin_can_manage_members_and_invites<C: TestContext>()
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut admin = TestUser::new(&base_url, &client, auth_config).await;
     let mut member = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let admin_invite = organization_invite_create(
         &base_url,
@@ -388,7 +394,12 @@ pub async fn organization_admin_can_manage_members_and_invites<C: TestContext>()
         &admin_invite.token,
     )
     .await;
-    auth_response_assert(&admin_payload, &admin.email, OrganizationRole::Admin);
+    auth_response_assert(
+        &admin_payload,
+        &admin.email,
+        OrganizationRole::Admin,
+        OrganizationKind::Shared,
+    );
     let admin_user_id = Uuid::parse_str(&admin_payload.user.id).expect("admin user id");
 
     let member_payload = organization_invite_accept(
@@ -399,7 +410,12 @@ pub async fn organization_admin_can_manage_members_and_invites<C: TestContext>()
         &member_invite.token,
     )
     .await;
-    auth_response_assert(&member_payload, &member.email, OrganizationRole::Member);
+    auth_response_assert(
+        &member_payload,
+        &member.email,
+        OrganizationRole::Member,
+        OrganizationKind::Shared,
+    );
     let member_user_id = Uuid::parse_str(&member_payload.user.id).expect("member user id");
 
     let admin_created_invite = organization_invite_create(
@@ -470,8 +486,9 @@ pub async fn organization_member_delete_active_membership_preserves_auth_or_clea
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut member = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let member_invite = organization_invite_create(
         &base_url,
@@ -506,6 +523,7 @@ pub async fn organization_member_delete_active_membership_preserves_auth_or_clea
 
     let me = me_get(&base_url, &client, &member, auth_config).await;
     assert_eq!(me.organization.id, organization_id.to_string());
+    assert_eq!(me.organization.kind, OrganizationKind::Shared);
     assert_eq!(me.organization.role, OrganizationRole::Member);
 
     let refresh_payload = auth_refresh(&base_url, &client, &mut member, auth_config).await;
@@ -522,8 +540,9 @@ pub async fn organization_admin_cannot_delete_owner<C: TestContext>() {
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut admin = TestUser::new(&base_url, &client, auth_config).await;
     let mut co_owner = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let admin_invite = organization_invite_create(
         &base_url,
@@ -585,46 +604,74 @@ pub async fn organization_admin_cannot_delete_owner<C: TestContext>() {
     );
 }
 
-/// A user must remain owner/member of their own personal organization.
-pub async fn organization_personal_org_membership_cannot_be_demoted_or_removed<C: TestContext>() {
+/// Personal workspaces must reject collaboration routes.
+pub async fn organization_personal_workspace_rejects_collaboration_routes<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
-    let mut co_owner = TestUser::new(&base_url, &client, auth_config).await;
     let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
     let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
     let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
+    let random_invite_id = Uuid::new_v4();
 
-    let owner_invite = organization_invite_create(
-        &base_url,
-        &client,
-        &owner,
-        auth_config,
-        organization_id,
-        &co_owner.email,
-        OrganizationRole::Owner,
-    )
-    .await;
+    let members_response = client
+        .get(format!(
+            "{base_url}{}",
+            organization_members_path(organization_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("personal workspace members request");
+    assert_eq!(members_response.status(), StatusCode::FORBIDDEN);
 
-    organization_invite_accept(
-        &base_url,
-        &client,
-        &mut co_owner,
-        auth_config,
-        &owner_invite.token,
-    )
-    .await;
+    let invites_response = client
+        .get(format!(
+            "{base_url}{}",
+            organization_invites_path(organization_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("personal workspace invites request");
+    assert_eq!(invites_response.status(), StatusCode::FORBIDDEN);
+
+    let invite_create_response = client
+        .post(format!(
+            "{base_url}{}",
+            organization_invites_path(organization_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .json(&json!({
+            "email": format!("blocked+{}@example.com", Uuid::new_v4()),
+            "role": OrganizationRole::Member,
+        }))
+        .send()
+        .await
+        .expect("personal workspace invite create request");
+    assert_eq!(invite_create_response.status(), StatusCode::FORBIDDEN);
+
+    let invite_revoke_response = client
+        .delete(format!(
+            "{base_url}{}",
+            organization_invite_path(organization_id, random_invite_id)
+        ))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("personal workspace invite revoke request");
+    assert_eq!(invite_revoke_response.status(), StatusCode::FORBIDDEN);
 
     let demote_response = client
         .patch(format!(
             "{base_url}{}",
             organization_member_path(organization_id, owner_user_id)
         ))
-        .header(header::COOKIE, co_owner.cookie_header(auth_config))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
         .json(&json!({ "role": OrganizationRole::Admin }))
         .send()
         .await
-        .expect("personal owner demote request");
+        .expect("personal workspace member update request");
     assert_eq!(demote_response.status(), StatusCode::FORBIDDEN);
 
     let delete_response = client
@@ -632,20 +679,11 @@ pub async fn organization_personal_org_membership_cannot_be_demoted_or_removed<C
             "{base_url}{}",
             organization_member_path(organization_id, owner_user_id)
         ))
-        .header(header::COOKIE, co_owner.cookie_header(auth_config))
+        .header(header::COOKIE, owner.cookie_header(auth_config))
         .send()
         .await
-        .expect("personal owner delete request");
+        .expect("personal workspace member delete request");
     assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
-
-    let members =
-        organization_members_list(&base_url, &client, &owner, auth_config, organization_id).await;
-    assert!(
-        members
-            .iter()
-            .any(|member| member.user_id == owner_user_id && member.role == OrganizationRole::Owner),
-        "personal owner membership should remain present and owned",
-    );
 }
 
 /// The final remaining owner must not be demoted or removed.
@@ -653,9 +691,16 @@ pub async fn organization_last_owner_cannot_be_demoted_or_removed<C: TestContext
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
-    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
-    let organization_id = Uuid::parse_str(&owner_me.organization.id).expect("organization id");
-    let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let owner_user_id = Uuid::parse_str(
+        &me_get(&base_url, &client, &owner, auth_config)
+            .await
+            .user
+            .id,
+    )
+    .expect("owner user id");
+    let organization_id = organization.id;
 
     let demote_response = client
         .patch(format!(
@@ -680,7 +725,12 @@ pub async fn organization_last_owner_cannot_be_demoted_or_removed<C: TestContext
         .expect("last owner delete request");
     assert_eq!(delete_response.status(), StatusCode::FORBIDDEN);
 
-    let me = me_get(&base_url, &client, &owner, auth_config).await;
-    assert_eq!(me.organization.id, organization_id.to_string());
-    assert_eq!(me.organization.role, OrganizationRole::Owner);
+    let members =
+        organization_members_list(&base_url, &client, &owner, auth_config, organization_id).await;
+    assert!(
+        members
+            .iter()
+            .any(|member| member.user_id == owner_user_id && member.role == OrganizationRole::Owner),
+        "shared organization should keep its final owner membership",
+    );
 }

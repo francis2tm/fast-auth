@@ -8,6 +8,7 @@ use crate::AuthBackendError;
 use crate::AuthError;
 use crate::AuthResponse;
 use crate::AuthUser;
+use crate::OrganizationKind;
 use crate::OrganizationRole;
 use crate::SessionIssueIfPasswordHashParams;
 use crate::handlers::SIGN_IN_PATH;
@@ -62,7 +63,12 @@ pub async fn sign_in_returns_tokens_for_valid_credentials<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user present after sign-in");
-    auth_response_assert(&parsed, &user.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &parsed,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
     assert_eq!(parsed.user.id, stored.id().to_string());
     assert!(
         stored.last_sign_in_at().is_some(),

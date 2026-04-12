@@ -54,8 +54,9 @@ use axum_extra::extract::cookie::CookieJar;
 pub use backend::{
     ApiKey, ApiKeyCreateParams, ApiKeyListSortBy, ApiKeyWithSecret, AuthBackend, AuthBackendError,
     AuthBackendErrorKind, AuthUser, HydratedUser, Organization, OrganizationInvite,
-    OrganizationInviteWithSecret, OrganizationMember, OrganizationRole, SessionExchangeParams,
-    SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated, VerificationTokenIssueParams,
+    OrganizationInviteWithSecret, OrganizationKind, OrganizationMember, OrganizationRole,
+    SessionExchangeParams, SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
+    VerificationTokenIssueParams,
 };
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
@@ -89,6 +90,7 @@ pub struct UserResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrganizationResponse {
     pub id: String,
+    pub kind: OrganizationKind,
     pub name: String,
     pub role: OrganizationRole,
 }
@@ -111,6 +113,7 @@ pub fn auth_response_build(hydrated_user: &HydratedUser) -> AuthResponse {
         },
         organization: OrganizationResponse {
             id: hydrated_user.organization_id.to_string(),
+            kind: hydrated_user.organization_kind,
             name: hydrated_user.organization_name.clone(),
             role: hydrated_user.organization_role,
         },

@@ -1,4 +1,5 @@
 use super::*;
+use crate::tokens::token_with_hash_generate;
 
 /// Invites should be creatable before the invited user signs up.
 pub async fn organization_invite_accept_supports_user_created_after_invite<C: TestContext>() {
@@ -7,13 +8,9 @@ pub async fn organization_invite_accept_supports_user_created_after_invite<C: Te
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee_email = format!("invited+{}@example.com", Uuid::new_v4());
     let invitee_password = "SecurePass123";
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -56,7 +53,12 @@ pub async fn organization_invite_accept_supports_user_created_after_invite<C: Te
     let payload =
         organization_invite_accept(&base_url, &client, &mut invitee, auth_config, &invite.token)
             .await;
-    auth_response_assert(&payload, &invitee_email, OrganizationRole::Member);
+    auth_response_assert(
+        &payload,
+        &invitee_email,
+        OrganizationRole::Member,
+        OrganizationKind::Shared,
+    );
     assert_eq!(payload.organization.id, organization_id.to_string());
 
     let memberships = organizations_list(&base_url, &client, &invitee, auth_config).await;
@@ -76,13 +78,9 @@ pub async fn organization_invite_accept_race_has_single_winner<C: TestContext>()
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -145,13 +143,9 @@ pub async fn organization_invite_accept_and_revoke_race_has_single_winner<C: Tes
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -216,13 +210,9 @@ pub async fn organization_invite_create_race_keeps_single_active_invite<C: TestC
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
     let owner_cookie = owner.cookie_header(auth_config);
     let invite_email = format!("  {}  ", invitee.email.to_uppercase());
 
@@ -290,6 +280,7 @@ pub async fn organization_invite_create_race_keeps_single_active_invite<C: TestC
     let active_accept: AuthResponse = response_json(active_accept).await;
     assert_eq!(active_accept.user.email, invitee.email);
     assert_eq!(active_accept.organization.id, organization_id.to_string());
+    assert_eq!(active_accept.organization.kind, OrganizationKind::Shared);
     assert_eq!(active_accept.organization.role, expected_role);
 }
 
@@ -299,13 +290,9 @@ pub async fn organization_invite_create_replaces_existing_active_invite<C: TestC
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let first = organization_invite_create(
         &base_url,
@@ -361,7 +348,12 @@ pub async fn organization_invite_create_replaces_existing_active_invite<C: TestC
     let payload =
         organization_invite_accept(&base_url, &client, &mut invitee, auth_config, &second.token)
             .await;
-    auth_response_assert(&payload, &invitee.email, OrganizationRole::Admin);
+    auth_response_assert(
+        &payload,
+        &invitee.email,
+        OrganizationRole::Admin,
+        OrganizationKind::Shared,
+    );
     assert_eq!(payload.organization.id, organization_id.to_string());
 }
 
@@ -371,13 +363,9 @@ pub async fn organization_invite_accept_adds_membership_and_switches_context<C: 
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -402,7 +390,12 @@ pub async fn organization_invite_accept_adds_membership_and_switches_context<C: 
     let payload =
         organization_invite_accept(&base_url, &client, &mut invitee, auth_config, &invite.token)
             .await;
-    auth_response_assert(&payload, &invitee.email, OrganizationRole::Member);
+    auth_response_assert(
+        &payload,
+        &invitee.email,
+        OrganizationRole::Member,
+        OrganizationKind::Shared,
+    );
     assert_eq!(payload.organization.id, organization_id.to_string());
 
     let memberships = organizations_list(&base_url, &client, &invitee, auth_config).await;
@@ -431,6 +424,7 @@ pub async fn organization_invite_accept_adds_membership_and_switches_context<C: 
 
     let me = me_get(&base_url, &client, &invitee, auth_config).await;
     assert_eq!(me.organization.id, organization_id.to_string());
+    assert_eq!(me.organization.kind, OrganizationKind::Shared);
     assert_eq!(me.organization.role, OrganizationRole::Member);
 }
 
@@ -440,13 +434,9 @@ pub async fn organization_invite_revoke_prevents_acceptance<C: TestContext>() {
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -492,13 +482,9 @@ pub async fn organization_invite_accept_rejects_wrong_email<C: TestContext>() {
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let invitee = TestUser::new(&base_url, &client, auth_config).await;
     let stranger = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -527,13 +513,9 @@ pub async fn organization_invite_accept_rejects_reuse<C: TestContext>() {
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
     let mut invitee = TestUser::new(&base_url, &client, auth_config).await;
-    let organization_id = Uuid::parse_str(
-        &me_get(&base_url, &client, &owner, auth_config)
-            .await
-            .organization
-            .id,
-    )
-    .expect("organization id");
+    let organization =
+        shared_organization_create(&base_url, &client, &owner, auth_config, "Shared").await;
+    let organization_id = organization.id;
 
     let invite = organization_invite_create(
         &base_url,
@@ -556,4 +538,37 @@ pub async fn organization_invite_accept_rejects_reuse<C: TestContext>() {
         .await
         .expect("organization invite replay request");
     assert_eq!(replay.status(), StatusCode::NOT_FOUND);
+}
+
+/// Invite acceptance must still reject one personal-workspace invite row if it exists.
+pub async fn organization_invite_accept_rejects_personal_workspace_even_if_invite_exists<
+    C: TestContext,
+>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+    let owner = TestUser::new(&base_url, &client, auth_config).await;
+    let invitee = TestUser::new(&base_url, &client, auth_config).await;
+    let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
+    let personal_organization_id =
+        Uuid::parse_str(&owner_me.organization.id).expect("personal organization id");
+    let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
+    let (token, token_hash) = token_with_hash_generate();
+
+    ctx.organization_invite_insert(
+        personal_organization_id,
+        owner_user_id,
+        &invitee.email,
+        OrganizationRole::Member,
+        &token_hash,
+    )
+    .await;
+
+    let response = client
+        .post(format!("{base_url}{}", organization_invite_accept_path()))
+        .header(header::COOKIE, invitee.cookie_header(auth_config))
+        .json(&json!({ "token": token }))
+        .send()
+        .await
+        .expect("personal invite accept request");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }

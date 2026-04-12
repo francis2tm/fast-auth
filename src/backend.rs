@@ -78,6 +78,8 @@ pub struct HydratedUser {
     pub organization_id: Uuid,
     /// Active organization role.
     pub organization_role: OrganizationRole,
+    /// Active organization kind.
+    pub organization_kind: OrganizationKind,
     /// Active organization display name.
     pub organization_name: String,
 }
@@ -194,6 +196,19 @@ pub enum OrganizationRole {
     Member,
 }
 
+/// Organization kind exposed by auth.
+///
+/// This distinguishes private workspaces from collaborative organizations
+/// while preserving mandatory organization scoping across the application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OrganizationKind {
+    /// Private workspace provisioned automatically for one user.
+    Personal,
+    /// Collaborative organization created explicitly by one user.
+    Shared,
+}
+
 /// Organization summary exposed by auth.
 ///
 /// This is the storage-agnostic organization shape returned by backend methods
@@ -202,6 +217,8 @@ pub enum OrganizationRole {
 pub struct Organization {
     /// Stable organization identifier.
     pub id: Uuid,
+    /// Whether this organization is private or collaborative.
+    pub kind: OrganizationKind,
     /// Human-readable organization name.
     pub name: String,
     /// Organization creation timestamp.
@@ -367,7 +384,7 @@ pub struct ApiKeyWithSecret {
 /// use chrono::{DateTime, Utc};
 /// use fast_auth::{
 ///     ApiKeyCreateParams, AuthBackend, AuthBackendError, AuthBackendErrorKind, RequestUser,
-///     AuthUser, OrganizationRole, HydratedUser, SessionExchangeParams,
+///     AuthUser, OrganizationKind, OrganizationRole, HydratedUser, SessionExchangeParams,
 ///     SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
 ///     VerificationTokenIssueParams,
 /// };
@@ -407,6 +424,7 @@ pub struct ApiKeyWithSecret {
 ///         email_confirmed_at: Some(Utc::now()),
 ///         organization_id: Uuid::nil(),
 ///         organization_role: OrganizationRole::Owner,
+///         organization_kind: OrganizationKind::Shared,
 ///         organization_name: String::new(),
 ///     }
 /// }
@@ -456,7 +474,7 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
         email: &str,
     ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    /// Creates a new user and provisions its default personal organization state.
+    /// Creates a new user and provisions its default personal workspace state.
     ///
     /// Must be race-safe for concurrent sign-ups with the same email.
     /// Return [`AuthError::UserAlreadyExists`] when email already exists.
@@ -643,8 +661,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Deletes one organization owned by one user.
     ///
-    /// Backends should require owner-level access, reject deletion of the
-    /// user's default personal organization, and return the deleted
+    /// Backends should require owner-level access, reject deletion of one
+    /// personal workspace, and return the deleted
     /// organization snapshot.
     fn organization_delete(
         &self,
@@ -674,8 +692,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Updates one member role inside one organization.
     ///
-    /// Backends should require owner-level access, reject demoting a user out
-    /// of ownership in their default personal organization, and return the
+    /// Backends should require owner-level access, reject role changes inside
+    /// personal workspaces, and return the
     /// updated membership row after the role change.
     fn organization_member_update_role(
         &self,
@@ -687,8 +705,8 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Removes one member from one organization.
     ///
-    /// Backends should enforce actor permissions, reject removing a user from
-    /// their default personal organization, and return the removed membership
+    /// Backends should enforce actor permissions, reject membership removal
+    /// inside personal workspaces, and return the removed membership
     /// row.
     fn organization_member_delete(
         &self,

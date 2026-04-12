@@ -216,6 +216,7 @@ pub fn auth_response_assert(
     payload: &crate::AuthResponse,
     expected_email: &str,
     expected_organization_role: crate::OrganizationRole,
+    expected_organization_kind: crate::OrganizationKind,
 ) {
     assert!(
         !payload.user.id.is_empty(),
@@ -230,6 +231,7 @@ pub fn auth_response_assert(
         !payload.organization.name.trim().is_empty(),
         "auth response must include organization name",
     );
+    assert_eq!(payload.organization.kind, expected_organization_kind);
     assert_eq!(payload.organization.role, expected_organization_role);
     assert_eq!(payload.auth_role, "authenticated");
 }
@@ -300,6 +302,16 @@ pub trait TestContext: Sized + Send + Sync {
         user_id: Uuid,
         token_type: crate::verification::VerificationTokenType,
     ) -> impl Future<Output = bool> + Send;
+
+    /// Insert one organization invite directly for tests that need storage-level setup.
+    fn organization_invite_insert(
+        &self,
+        organization_id: Uuid,
+        invited_by_user_id: Uuid,
+        email: &str,
+        role: crate::OrganizationRole,
+        token_hash: &str,
+    ) -> impl Future<Output = ()> + Send;
 }
 
 /// Test suite for fast-auth.
@@ -314,6 +326,7 @@ impl<C: TestContext> Suite<C> {
     pub async fn test_all() {
         // Sign-up tests
         sign_up::sign_up_creates_user_and_sets_cookies::<C>().await;
+        sign_up::sign_up_provisions_personal_workspace_kind::<C>().await;
         sign_up::sign_up_rejects_duplicate_email::<C>().await;
         sign_up::sign_up_rejects_invalid_email::<C>().await;
         sign_up::sign_up_rejects_sql_injection_email_payload::<C>().await;
@@ -353,8 +366,10 @@ impl<C: TestContext> Suite<C> {
 
         // Organization tests
         organizations::organizations_include_default_membership_and_support_crud::<C>().await;
+        organizations::organization_create_returns_shared_kind::<C>().await;
         organizations::organization_get_rejects_non_member::<C>().await;
         organizations::organization_switch_updates_active_auth_context::<C>().await;
+        organizations::organization_switch_between_personal_and_shared_updates_kind::<C>().await;
         organizations::organization_switch_rejects_non_member_organization::<C>().await;
         organizations::organization_switch_then_refresh_keeps_selected_org::<C>().await;
         organizations::organization_invite_accept_adds_membership_and_switches_context::<C>().await;
@@ -366,6 +381,7 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_invite_revoke_prevents_acceptance::<C>().await;
         organizations::organization_invite_accept_rejects_wrong_email::<C>().await;
         organizations::organization_invite_accept_rejects_reuse::<C>().await;
+        organizations::organization_invite_accept_rejects_personal_workspace_even_if_invite_exists::<C>().await;
         organizations::organization_member_role_gates_admin_routes::<C>().await;
         organizations::organization_delete_active_org_preserves_auth_or_is_rejected::<C>().await;
         organizations::organization_delete_personal_org_when_inactive_is_rejected::<C>().await;
@@ -376,8 +392,7 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_admin_can_manage_members_and_invites::<C>().await;
         organizations::organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently::<C>().await;
         organizations::organization_admin_cannot_delete_owner::<C>().await;
-        organizations::organization_personal_org_membership_cannot_be_demoted_or_removed::<C>()
-            .await;
+        organizations::organization_personal_workspace_rejects_collaboration_routes::<C>().await;
         organizations::organization_last_owner_cannot_be_demoted_or_removed::<C>().await;
 
         // Verification tests
@@ -410,7 +425,8 @@ impl<C: TestContext> Suite<C> {
 /// # use fast_auth::testing::{RefreshTokenInfo, TestContext};
 /// # use fast_auth::{
 /// #     ApiKeyCreateParams, AuthBackend, AuthBackendError, AuthBackendErrorKind, AuthConfig,
-/// #     RequestUser, AuthUser, OrganizationRole, HydratedUser, SessionExchangeParams,
+/// #     RequestUser, AuthUser, OrganizationKind, OrganizationRole, HydratedUser,
+/// #     SessionExchangeParams,
 /// #     SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
 /// #     VerificationTokenIssueParams,
 /// # };
@@ -449,6 +465,7 @@ impl<C: TestContext> Suite<C> {
 /// #         email_confirmed_at: None,
 /// #         organization_id: Uuid::nil(),
 /// #         organization_role: OrganizationRole::Owner,
+/// #         organization_kind: OrganizationKind::Shared,
 /// #         organization_name: String::new(),
 /// #     }
 /// # }
@@ -514,6 +531,14 @@ impl<C: TestContext> Suite<C> {
 /// #         _: Uuid,
 /// #         _: fast_auth::verification::VerificationTokenType,
 /// #     ) -> impl std::future::Future<Output = bool> + Send { async { false } }
+/// #     fn organization_invite_insert(
+/// #         &self,
+/// #         _: Uuid,
+/// #         _: Uuid,
+/// #         _: &str,
+/// #         _: OrganizationRole,
+/// #         _: &str,
+/// #     ) -> impl std::future::Future<Output = ()> + Send { async {} }
 /// # }
 /// #
 /// fast_auth::test_suite!(MyContext);
@@ -524,6 +549,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn sign_up_creates_user_and_sets_cookies() {
             $crate::testing::sign_up::sign_up_creates_user_and_sets_cookies::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_provisions_personal_workspace_kind() {
+            $crate::testing::sign_up::sign_up_provisions_personal_workspace_kind::<$context>().await;
         }
 
         #[tokio::test]
@@ -677,6 +707,11 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_create_returns_shared_kind() {
+            $crate::testing::organizations::organization_create_returns_shared_kind::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_get_rejects_non_member() {
             $crate::testing::organizations::organization_get_rejects_non_member::<$context>().await;
         }
@@ -684,6 +719,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn organization_switch_updates_active_auth_context() {
             $crate::testing::organizations::organization_switch_updates_active_auth_context::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_switch_between_personal_and_shared_updates_kind() {
+            $crate::testing::organizations::organization_switch_between_personal_and_shared_updates_kind::<$context>().await;
         }
 
         #[tokio::test]
@@ -742,6 +782,11 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_invite_accept_rejects_personal_workspace_even_if_invite_exists() {
+            $crate::testing::organizations::organization_invite_accept_rejects_personal_workspace_even_if_invite_exists::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_member_role_gates_admin_routes() {
             $crate::testing::organizations::organization_member_role_gates_admin_routes::<$context>().await;
         }
@@ -792,8 +837,8 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
-        async fn organization_personal_org_membership_cannot_be_demoted_or_removed() {
-            $crate::testing::organizations::organization_personal_org_membership_cannot_be_demoted_or_removed::<$context>().await;
+        async fn organization_personal_workspace_rejects_collaboration_routes() {
+            $crate::testing::organizations::organization_personal_workspace_rejects_collaboration_routes::<$context>().await;
         }
 
         #[tokio::test]

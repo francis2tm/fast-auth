@@ -1013,6 +1013,7 @@ components:
         and exposed by organization endpoints.
       required:
       - id
+      - kind
       - name
       - created_at
       - updated_at
@@ -1025,6 +1026,9 @@ components:
           type: string
           format: uuid
           description: Stable organization identifier.
+        kind:
+          $ref: '#/components/schemas/OrganizationKind'
+          description: Whether this organization is private or collaborative.
         name:
           type: string
           description: Human-readable organization name.
@@ -1133,6 +1137,16 @@ components:
 
         The plaintext `token` is returned only once so callers can deliver it to
         the invited user. Later reads should use [`OrganizationInvite`] instead.
+    OrganizationKind:
+      type: string
+      description: |-
+        Organization kind exposed by auth.
+
+        This distinguishes private workspaces from collaborative organizations
+        while preserving mandatory organization scoping across the application.
+      enum:
+      - personal
+      - shared
     OrganizationMember:
       type: object
       description: |-
@@ -1170,11 +1184,14 @@ components:
       description: Active organization returned in auth responses.
       required:
       - id
+      - kind
       - name
       - role
       properties:
         id:
           type: string
+        kind:
+          $ref: '#/components/schemas/OrganizationKind'
         name:
           type: string
         role:

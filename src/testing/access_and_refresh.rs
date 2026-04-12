@@ -9,6 +9,7 @@ use crate::AuthBackend;
 use crate::AuthBackendError;
 use crate::AuthError;
 use crate::AuthResponse;
+use crate::OrganizationKind;
 use crate::OrganizationRole;
 use crate::SessionExchangeParams;
 use crate::handlers::{ME_PATH, REFRESH_PATH};
@@ -165,7 +166,12 @@ pub async fn refresh_endpoint_accepts_valid_refresh_token<C: TestContext>() {
 
     let body = response.bytes().await.unwrap();
     let payload: AuthResponse = serde_json::from_slice(&body).unwrap();
-    auth_response_assert(&payload, &user.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &payload,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
 }
 
 /// Expired refresh tokens must be rejected without emitting cookies.

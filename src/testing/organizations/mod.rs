@@ -5,9 +5,12 @@ mod invites;
 mod permissions;
 
 pub use self::basics::{
+    organization_create_returns_shared_kind,
     organization_delete_active_org_preserves_auth_or_is_rejected,
     organization_delete_personal_org_when_inactive_is_rejected,
-    organization_get_rejects_non_member, organization_switch_rejects_non_member_organization,
+    organization_get_rejects_non_member,
+    organization_switch_between_personal_and_shared_updates_kind,
+    organization_switch_rejects_non_member_organization,
     organization_switch_then_refresh_keeps_selected_org,
     organization_switch_updates_active_auth_context,
     organizations_include_default_membership_and_support_crud,
@@ -15,8 +18,9 @@ pub use self::basics::{
 pub use self::invites::{
     organization_invite_accept_adds_membership_and_switches_context,
     organization_invite_accept_and_revoke_race_has_single_winner,
-    organization_invite_accept_race_has_single_winner, organization_invite_accept_rejects_reuse,
-    organization_invite_accept_rejects_wrong_email,
+    organization_invite_accept_race_has_single_winner,
+    organization_invite_accept_rejects_personal_workspace_even_if_invite_exists,
+    organization_invite_accept_rejects_reuse, organization_invite_accept_rejects_wrong_email,
     organization_invite_accept_supports_user_created_after_invite,
     organization_invite_create_race_keeps_single_active_invite,
     organization_invite_create_replaces_existing_active_invite,
@@ -28,7 +32,7 @@ pub use self::permissions::{
     organization_last_owner_cannot_be_demoted_or_removed,
     organization_member_delete_active_membership_preserves_auth_or_clears_session_consistently,
     organization_member_role_gates_admin_routes, organization_member_role_update_requires_owner,
-    organization_personal_org_membership_cannot_be_demoted_or_removed,
+    organization_personal_workspace_rejects_collaboration_routes,
     organization_role_change_is_visible_after_refresh_and_sign_in,
 };
 
@@ -39,7 +43,7 @@ use uuid::Uuid;
 
 use crate::handlers::ORGANIZATIONS_PATH;
 use crate::{
-    AuthResponse, Organization, OrganizationInvite, OrganizationInviteWithSecret,
+    AuthResponse, Organization, OrganizationInvite, OrganizationInviteWithSecret, OrganizationKind,
     OrganizationMember, OrganizationRole,
 };
 
@@ -122,6 +126,19 @@ async fn organization_create(
         .expect("organization create request");
     assert_eq!(response.status(), StatusCode::OK);
     response_json(response).await
+}
+
+/// Create one shared organization and return its organization payload.
+async fn shared_organization_create(
+    base_url: &str,
+    client: &Client,
+    user: &TestUser,
+    config: &crate::AuthConfig,
+    name: &str,
+) -> Organization {
+    let member = organization_create(base_url, client, user, config, name).await;
+    assert_eq!(member.organization.kind, OrganizationKind::Shared);
+    member.organization
 }
 
 /// Create one invite inside one organization.

@@ -4,7 +4,7 @@ use reqwest::{StatusCode, header};
 use serde_json::json;
 
 use crate::handlers::{API_KEYS_PATH, ME_PATH, ORGANIZATIONS_PATH};
-use crate::{AuthResponse, OrganizationMember, OrganizationRole};
+use crate::{AuthResponse, OrganizationKind, OrganizationMember, OrganizationRole};
 
 use super::{TestContext, TestUser, auth_response_assert, me_get};
 
@@ -52,7 +52,12 @@ pub async fn api_key_create_list_use_delete_flow<C: TestContext>() {
         .expect("bearer me request");
     assert_eq!(me_response.status(), StatusCode::OK);
     let bearer_payload: AuthResponse = me_response.json().await.expect("bearer me json");
-    auth_response_assert(&bearer_payload, &user.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &bearer_payload,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
     assert_eq!(bearer_payload.organization.id, me.organization.id);
 
     let used_response = client
@@ -138,7 +143,12 @@ pub async fn api_keys_are_scoped_to_active_organization<C: TestContext>() {
         .expect("organization switch json");
     user.auth_cookies_replace(&headers, auth_config);
 
-    auth_response_assert(&switch_payload, &user.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &switch_payload,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Shared,
+    );
     assert_eq!(
         switch_payload.organization.id,
         organization.organization.id.to_string()
@@ -184,7 +194,12 @@ pub async fn api_keys_are_scoped_to_active_organization<C: TestContext>() {
         .expect("mixed auth request");
     assert_eq!(bearer_response.status(), StatusCode::OK);
     let bearer_payload: AuthResponse = bearer_response.json().await.expect("bearer me json");
-    auth_response_assert(&bearer_payload, &user.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &bearer_payload,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
     assert_eq!(bearer_payload.organization.id, default_me.organization.id);
 
     let restored_me = me_get(&base_url, &client, &user, auth_config).await;
@@ -213,7 +228,12 @@ pub async fn bearer_api_key_takes_precedence_over_cookie<C: TestContext>() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let body: AuthResponse = response.json().await.expect("me json");
-    auth_response_assert(&body, &user_one.email, OrganizationRole::Owner);
+    auth_response_assert(
+        &body,
+        &user_one.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
 }
 
 /// Malformed or unknown API keys must be rejected.
