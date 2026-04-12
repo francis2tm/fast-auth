@@ -700,8 +700,10 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
     /// Creates one organization invitation and returns its one-time token.
     ///
     /// The plaintext token should be returned only once through
-    /// [`OrganizationInviteWithSecret`]. Backends should enforce that the actor
-    /// can invite members into the organization.
+    /// [`OrganizationInviteWithSecret`]. Backends should normalize the target
+    /// email, allow at most one active invite per `(organization_id, email)`,
+    /// and replace any older active invite for the same target. Backends should
+    /// also enforce that the actor can invite members into the organization.
     fn organization_invite_create(
         &self,
         actor_user_id: Uuid,
@@ -733,8 +735,10 @@ pub trait AuthBackend: Clone + Send + Sync + 'static {
 
     /// Accepts one organization invitation for an authenticated user.
     ///
-    /// This should validate the invite token, create the membership, and return
-    /// the refreshed [`HydratedUser`] payload for the user after acceptance.
+    /// This should validate the invite token, create the membership, invalidate
+    /// any sibling active invites for the same `(organization_id, email)`, and
+    /// return the refreshed [`HydratedUser`] payload for the user after
+    /// acceptance. This mutation must be race-safe.
     fn organization_invite_accept(
         &self,
         user_id: Uuid,

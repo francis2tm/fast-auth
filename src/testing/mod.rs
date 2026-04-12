@@ -293,6 +293,13 @@ pub trait TestContext: Sized + Send + Sync {
         user_id: Uuid,
         password_hash: &str,
     ) -> impl Future<Output = ()> + Send;
+
+    /// Check whether one active verification token exists for a user and type.
+    fn verification_token_active_exists(
+        &self,
+        user_id: Uuid,
+        token_type: crate::verification::VerificationTokenType,
+    ) -> impl Future<Output = bool> + Send;
 }
 
 /// Test suite for fast-auth.
@@ -351,6 +358,11 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_switch_rejects_non_member_organization::<C>().await;
         organizations::organization_switch_then_refresh_keeps_selected_org::<C>().await;
         organizations::organization_invite_accept_adds_membership_and_switches_context::<C>().await;
+        organizations::organization_invite_accept_supports_user_created_after_invite::<C>().await;
+        organizations::organization_invite_accept_race_has_single_winner::<C>().await;
+        organizations::organization_invite_accept_and_revoke_race_has_single_winner::<C>().await;
+        organizations::organization_invite_create_race_keeps_single_active_invite::<C>().await;
+        organizations::organization_invite_create_replaces_existing_active_invite::<C>().await;
         organizations::organization_invite_revoke_prevents_acceptance::<C>().await;
         organizations::organization_invite_accept_rejects_wrong_email::<C>().await;
         organizations::organization_invite_accept_rejects_reuse::<C>().await;
@@ -369,6 +381,7 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_last_owner_cannot_be_demoted_or_removed::<C>().await;
 
         // Verification tests
+        verification::sign_up_issues_email_confirm_token_when_confirmation_required::<C>().await;
         verification::sign_in_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
         verification::sign_up_skips_cookie_issuance_when_confirmation_required::<C>().await;
         verification::refresh_rejects_unconfirmed_user_when_confirmation_required::<C>().await;
@@ -496,6 +509,11 @@ impl<C: TestContext> Suite<C> {
 /// #     fn refresh_token_get(&self, _: &str) -> impl std::future::Future<Output = Option<RefreshTokenInfo>> + Send { async { None } }
 /// #     fn refresh_token_expire(&self, _: &str) -> impl std::future::Future<Output = ()> + Send { async {} }
 /// #     fn user_password_hash_set(&self, _: Uuid, _: &str) -> impl std::future::Future<Output = ()> + Send { async {} }
+/// #     fn verification_token_active_exists(
+/// #         &self,
+/// #         _: Uuid,
+/// #         _: fast_auth::verification::VerificationTokenType,
+/// #     ) -> impl std::future::Future<Output = bool> + Send { async { false } }
 /// # }
 /// #
 /// fast_auth::test_suite!(MyContext);
@@ -684,6 +702,31 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
+        async fn organization_invite_accept_supports_user_created_after_invite() {
+            $crate::testing::organizations::organization_invite_accept_supports_user_created_after_invite::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_accept_race_has_single_winner() {
+            $crate::testing::organizations::organization_invite_accept_race_has_single_winner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_accept_and_revoke_race_has_single_winner() {
+            $crate::testing::organizations::organization_invite_accept_and_revoke_race_has_single_winner::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_create_race_keeps_single_active_invite() {
+            $crate::testing::organizations::organization_invite_create_race_keeps_single_active_invite::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn organization_invite_create_replaces_existing_active_invite() {
+            $crate::testing::organizations::organization_invite_create_replaces_existing_active_invite::<$context>().await;
+        }
+
+        #[tokio::test]
         async fn organization_invite_revoke_prevents_acceptance() {
             $crate::testing::organizations::organization_invite_revoke_prevents_acceptance::<$context>().await;
         }
@@ -756,6 +799,11 @@ macro_rules! test_suite {
         #[tokio::test]
         async fn organization_last_owner_cannot_be_demoted_or_removed() {
             $crate::testing::organizations::organization_last_owner_cannot_be_demoted_or_removed::<$context>().await;
+        }
+
+        #[tokio::test]
+        async fn sign_up_issues_email_confirm_token_when_confirmation_required() {
+            $crate::testing::verification::sign_up_issues_email_confirm_token_when_confirmation_required::<$context>().await;
         }
 
         #[tokio::test]

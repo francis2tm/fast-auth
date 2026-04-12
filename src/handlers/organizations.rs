@@ -3,8 +3,8 @@
 use crate::{
     Auth, AuthBackend, AuthHooks, CurrentAdmin, CurrentOwner, EmailSender, Organization,
     OrganizationInvite, OrganizationInviteWithSecret, OrganizationMember, OrganizationRole,
-    RequestUser, auth_response_with_cookies_build, error::AuthError,
-    tokens::token_cookies_generate,
+    RequestUser, auth_response_with_cookies_build, email::email_validate_normalize,
+    error::AuthError, tokens::token_cookies_generate,
 };
 use axum::{
     Json, Router,
@@ -301,12 +301,13 @@ async fn organization_invite_create<B: AuthBackend, H: AuthHooks, E: EmailSender
     Path(organization_id): Path<Uuid>,
     Json(request): Json<OrganizationInviteCreateRequest>,
 ) -> Result<Json<OrganizationInviteWithSecret>, AuthError> {
+    let email = email_validate_normalize(&request.email)?;
     Ok(Json(
         auth.backend()
             .organization_invite_create(
                 current_admin.user_id,
                 organization_id,
-                request.email.trim(),
+                &email,
                 request.role,
             )
             .await

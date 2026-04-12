@@ -13,6 +13,38 @@ use crate::{AuthBackend, AuthUser, VerificationTokenIssueParams};
 
 use super::{TestContext, TestUser};
 
+/// Sign-up should create an active email-confirm token when confirmation is required.
+pub async fn sign_up_issues_email_confirm_token_when_confirmation_required<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
+    assert!(
+        ctx.auth_config().email_confirmation_require,
+        "TestContext::spawn_require_email_confirmation must enable require_email_confirmation",
+    );
+
+    let email = format!("signup-confirm+{}@example.com", uuid::Uuid::new_v4());
+    let password = "SecurePass123";
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .expect("sign-up request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let user = ctx
+        .backend()
+        .user_find_by_email(&email)
+        .await
+        .expect("db query")
+        .expect("user should exist after sign-up");
+    assert!(
+        ctx.verification_token_active_exists(user.id(), VerificationTokenType::EmailConfirm)
+            .await,
+        "sign-up should issue an active email confirmation token when confirmation is required",
+    );
+}
+
 /// Email confirmation should consume token and mark the user as confirmed.
 pub async fn email_confirm_marks_user_confirmed<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
