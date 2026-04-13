@@ -13,19 +13,18 @@
 //!
 //! # Quick Start
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use fast_auth::{Auth, AuthConfig};
-//! use axum::{Router, extract::FromRef};
 //!
-//! let backend = /* your AuthBackend implementation */;
-//! let secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! # fn app_build<B: fast_auth::AuthBackend>(backend: B) -> Result<(), fast_auth::AuthConfigError> {
 //! let mut config = AuthConfig::default();
-//! config.jwt_secret = secret;
-//! let auth = Auth::new(config, backend).unwrap();
+//! config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
+//! let auth = Auth::new(config, backend)?;
 //!
-//! let app = Router::new()
-//!     .merge(auth.routes())
-//!     .with_state(auth);
+//! let app: axum::Router = auth.routes::<Auth<B>>().with_state(auth);
+//! # let _ = app;
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod api_key;
@@ -47,16 +46,28 @@ pub mod verification;
 mod verification_email;
 
 pub use api_key::{api_key_generate, api_key_hash, api_key_issue, api_key_prefix_extract};
-use axum::Router;
+use axum::{
+    Json, Router,
+    response::{IntoResponse, Response},
+};
+use axum_extra::extract::cookie::CookieJar;
 pub use backend::{
-    AuthApiKey, AuthApiKeyListSortBy, AuthApiKeyWithSecret, AuthBackend, AuthBackendError, AuthUser,
+    ApiKey, ApiKeyCreateParams, ApiKeyListSortBy, ApiKeyWithSecret, AuthBackend, AuthBackendError,
+    AuthBackendErrorKind, AuthUser, HydratedUser, Organization, OrganizationInvite,
+    OrganizationInviteWithSecret, OrganizationKind, OrganizationMember, OrganizationRole,
+    SessionExchangeParams, SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
+    VerificationTokenIssueParams,
 };
 pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
-pub use extractors::CurrentUser;
+pub use extractors::{RequestAdmin, RequestOwner, RequestUser};
 pub use handlers::api_keys::{
     ApiKeyCreateRequest, ApiKeyCreateResponse, ApiKeyListQuery, ApiKeySummary,
+};
+pub use handlers::organizations::{
+    OrganizationCreateRequest, OrganizationInviteAcceptRequest, OrganizationInviteCreateRequest,
+    OrganizationRoleUpdateRequest, OrganizationSwitchRequest, OrganizationUpdateRequest,
 };
 pub use handlers::sign_in::SignInRequest;
 pub use handlers::sign_out::SignOutResponse;
@@ -73,48 +84,80 @@ pub struct UserResponse {
     pub id: String,
     pub email: String,
     pub email_confirmed_at: Option<String>,
-    pub created_at: String,
+}
+
+/// Active organization returned in auth responses.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct OrganizationResponse {
+    pub id: String,
+    pub kind: OrganizationKind,
+    pub name: String,
+    pub role: OrganizationRole,
 }
 
 /// Auth response body. Tokens are set as httpOnly cookies.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
-pub struct AuthCookieResponse {
+pub struct AuthResponse {
     pub user: UserResponse,
+    pub organization: OrganizationResponse,
+    pub auth_role: String,
+}
+
+/// Build one public authenticated-user response.
+pub fn auth_response_build(hydrated_user: &HydratedUser) -> AuthResponse {
+    AuthResponse {
+        user: UserResponse {
+            id: hydrated_user.user_id.to_string(),
+            email: hydrated_user.email.clone(),
+            email_confirmed_at: hydrated_user.email_confirmed_at.map(|dt| dt.to_rfc3339()),
+        },
+        organization: OrganizationResponse {
+            id: hydrated_user.organization_id.to_string(),
+            kind: hydrated_user.organization_kind,
+            name: hydrated_user.organization_name.clone(),
+            role: hydrated_user.organization_role,
+        },
+        auth_role: hydrated_user.role.clone(),
+    }
+}
+
+/// Build one auth response with updated cookies.
+pub fn auth_response_with_cookies_build(jar: CookieJar, hydrated_user: &HydratedUser) -> Response {
+    (jar, Json(auth_response_build(hydrated_user))).into_response()
 }
 
 /// Hooks for auth lifecycle events (sign-up, sign-in).
 ///
-/// Implement this trait to receive callbacks when users sign up or sign in.
-/// The user parameter uses your backend's user type via [`AuthBackend::User`].
+/// Implement this trait to receive callbacks when authenticated users sign up or sign in.
 ///
 /// # Example
 ///
 /// ```rust,no_run
-/// use fast_auth::{AuthHooks, AuthUser};
+/// use fast_auth::{AuthHooks, HydratedUser};
 ///
 /// #[derive(Clone)]
 /// struct MyHooks;
 ///
-/// impl<U: AuthUser> AuthHooks<U> for MyHooks {
-///     fn on_sign_up(&self, user: &U) -> impl std::future::Future<Output = ()> + Send {
-///         let user_id = user.id();
-///         async move { println!("User {user_id} signed up!"); }
+/// impl AuthHooks for MyHooks {
+///     fn on_sign_up(&self, hydrated_user: &HydratedUser) -> impl std::future::Future<Output = ()> + Send {
+///         let organization_id = hydrated_user.organization_id;
+///         async move { println!("Provisioned org {organization_id}!"); }
 ///     }
 /// }
 /// ```
-pub trait AuthHooks<U: AuthUser>: Send + Sync + Clone + 'static {
-    /// Called after a user is created.
-    fn on_sign_up(&self, _user: &U) -> impl Future<Output = ()> + Send {
+pub trait AuthHooks: Send + Sync + Clone + 'static {
+    /// Called after an authenticated user is created.
+    fn on_sign_up(&self, _hydrated_user: &HydratedUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 
-    /// Called after a user signs in.
-    fn on_sign_in(&self, _user: &U) -> impl Future<Output = ()> + Send {
+    /// Called after an authenticated user signs in.
+    fn on_sign_in(&self, _hydrated_user: &HydratedUser) -> impl Future<Output = ()> + Send {
         async {}
     }
 }
 
-impl<U: AuthUser> AuthHooks<U> for () {}
+impl AuthHooks for () {}
 
 /// Email/password auth with JWT tokens. Cheap to clone.
 ///
@@ -125,16 +168,19 @@ impl<U: AuthUser> AuthHooks<U> for () {}
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use fast_auth::{Auth, AuthConfig, AuthBackend};
-/// let backend: impl AuthBackend = /* ... */;
-/// let secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// ```rust,no_run
+/// use fast_auth::{Auth, AuthConfig};
+///
+/// # fn auth_build<B: fast_auth::AuthBackend>(backend: B) -> Result<(), fast_auth::AuthConfigError> {
 /// let mut config = AuthConfig::default();
-/// config.jwt_secret = secret;
-/// let auth = Auth::new(config, backend).unwrap();
+/// config.jwt_secret = "your-secret-key-at-least-32-characters-long".to_string();
+/// let auth = Auth::new(config, backend)?;
+/// # let _ = auth;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone)]
-pub struct Auth<B: AuthBackend, H: AuthHooks<B::User> = (), E: EmailSender = ()> {
+pub struct Auth<B: AuthBackend, H: AuthHooks = (), E: EmailSender = ()> {
     config: Arc<AuthConfig>,
     backend: B,
     hooks: H,
@@ -154,9 +200,9 @@ impl<B: AuthBackend> Auth<B, (), ()> {
     }
 }
 
-impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
+impl<B: AuthBackend, H: AuthHooks, E: EmailSender> Auth<B, H, E> {
     /// Attach custom lifecycle hooks.
-    pub fn with_hooks<NewH: AuthHooks<B::User>>(self, hooks: NewH) -> Auth<B, NewH, E> {
+    pub fn with_hooks<NewH: AuthHooks>(self, hooks: NewH) -> Auth<B, NewH, E> {
         Auth {
             config: self.config,
             backend: self.backend,
@@ -188,6 +234,7 @@ impl<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender> Auth<B, H, E> {
             .merge(handlers::sign_out_routes::<B, H, E>())
             .merge(handlers::api_key_routes::<B, H, E>())
             .merge(handlers::me_routes::<B, H, E>())
+            .merge(handlers::organization_routes::<B, H, E>())
             .merge(handlers::email_confirm_routes::<B, H, E>())
             .merge(handlers::password_reset_routes::<B, H, E>())
             .with_state(self.clone())

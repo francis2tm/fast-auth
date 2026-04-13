@@ -25,7 +25,7 @@ pub enum EmailSendError {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use fast_auth::{EmailSender, EmailSendError};
 ///
 /// #[derive(Clone)]

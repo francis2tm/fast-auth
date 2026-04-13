@@ -1,19 +1,15 @@
 //! Handler for user sign-in.
 
 use crate::{
-    Auth, AuthBackend, AuthCookieResponse, AuthHooks, AuthUser, EmailSender, UserResponse,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, SessionIssueIfPasswordHashParams,
+    auth_response_with_cookies_build,
     cookies::{access_token_cookie_create, refresh_token_cookie_create},
     email::email_validate_normalize,
     error::AuthError,
     password::password_verify,
     tokens::{access_token_generate, token_expiry_calculate, token_with_hash_generate},
 };
-use axum::{
-    Json, Router,
-    extract::State,
-    response::{IntoResponse, Response},
-    routing::post,
-};
+use axum::{Json, Router, extract::State, response::Response, routing::post};
 use serde::Deserialize;
 use utoipa::{OpenApi, ToSchema};
 
@@ -22,17 +18,12 @@ pub const SIGN_IN_PATH: &str = "/auth/sign-in";
 #[derive(OpenApi)]
 #[openapi(
     paths(sign_in),
-    components(schemas(
-        SignInRequest,
-        crate::AuthCookieResponse,
-        crate::error::AuthErrorResponse
-    ))
+    components(schemas(SignInRequest, crate::AuthResponse, crate::error::AuthErrorResponse))
 )]
 pub(crate) struct SignInApi;
 
 /// Returns routes for the /auth/sign-in endpoint.
-pub fn sign_in_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn sign_in_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>> {
     Router::new().route(SIGN_IN_PATH, post(sign_in::<B, H, E>))
 }
 
@@ -57,14 +48,14 @@ pub struct SignInRequest {
     path = "",
     request_body = SignInRequest,
     responses(
-        (status = OK, body = crate::AuthCookieResponse),
+        (status = OK, body = crate::AuthResponse),
         (status = BAD_REQUEST, body = crate::error::AuthErrorResponse),
         (status = UNAUTHORIZED, body = crate::error::AuthErrorResponse),
         (status = FORBIDDEN, body = crate::error::AuthErrorResponse),
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn sign_in<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     Json(req): Json<SignInRequest>,
 ) -> Result<Response, AuthError> {
@@ -93,38 +84,27 @@ pub async fn sign_in<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
         return Err(AuthError::EmailNotConfirmed);
     }
 
-    let access_token = access_token_generate(user.id(), user.email().to_owned(), config)?;
     let (refresh_token, refresh_token_hash) = token_with_hash_generate();
     let refresh_token_expiry = token_expiry_calculate(config.refresh_token_expiry);
 
-    auth.backend()
-        .session_issue_if_password_hash(
-            user.id(),
-            user.password_hash(),
-            &refresh_token_hash,
-            refresh_token_expiry,
-        )
+    let hydrated_user = auth
+        .backend()
+        .session_issue_if_password_hash(SessionIssueIfPasswordHashParams {
+            user_id: user.id(),
+            current_password_hash: user.password_hash(),
+            refresh_token_hash: &refresh_token_hash,
+            expires_at: refresh_token_expiry,
+        })
         .await
         .map_err(AuthError::from_backend)?;
+    let access_token = access_token_generate(&hydrated_user, config)?;
 
     // Call the on_sign_in hook only after session issuance succeeds.
-    auth.hooks().on_sign_in(&user).await;
+    auth.hooks().on_sign_in(&hydrated_user).await;
 
     let jar = axum_extra::extract::cookie::CookieJar::new()
         .add(access_token_cookie_create(access_token, config))
         .add(refresh_token_cookie_create(refresh_token, config));
 
-    // Build response with user information
-    let user_response = UserResponse {
-        id: user.id().to_string(),
-        email: user.email().to_owned(),
-        email_confirmed_at: user.email_confirmed_at().map(|dt| dt.to_rfc3339()),
-        created_at: user.created_at().to_rfc3339(),
-    };
-
-    let response_body = AuthCookieResponse {
-        user: user_response,
-    };
-
-    Ok((jar, Json(response_body)).into_response())
+    Ok(auth_response_with_cookies_build(jar, &hydrated_user))
 }

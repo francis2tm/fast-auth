@@ -9,9 +9,41 @@ use crate::handlers::{
 };
 use crate::tokens::{token_generate, token_hash_sha256};
 use crate::verification::VerificationTokenType;
-use crate::{AuthBackend, AuthUser};
+use crate::{AuthBackend, AuthUser, VerificationTokenIssueParams};
 
 use super::{TestContext, TestUser};
+
+/// Sign-up should create an active email-confirm token when confirmation is required.
+pub async fn sign_up_issues_email_confirm_token_when_confirmation_required<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn_require_email_confirmation().await;
+    assert!(
+        ctx.auth_config().email_confirmation_require,
+        "TestContext::spawn_require_email_confirmation must enable require_email_confirmation",
+    );
+
+    let email = format!("signup-confirm+{}@example.com", uuid::Uuid::new_v4());
+    let password = "SecurePass123";
+    let response = client
+        .post(format!("{}{}", base_url, SIGN_UP_PATH))
+        .json(&json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .expect("sign-up request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let user = ctx
+        .backend()
+        .user_find_by_email(&email)
+        .await
+        .expect("db query")
+        .expect("user should exist after sign-up");
+    assert!(
+        ctx.verification_token_active_exists(user.id(), VerificationTokenType::EmailConfirm)
+            .await,
+        "sign-up should issue an active email confirmation token when confirmation is required",
+    );
+}
 
 /// Email confirmation should consume token and mark the user as confirmed.
 pub async fn email_confirm_marks_user_confirmed<C: TestContext>() {
@@ -30,12 +62,12 @@ pub async fn email_confirm_marks_user_confirmed<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::EmailConfirm,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::EmailConfirm,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -79,12 +111,12 @@ pub async fn email_confirm_supports_get_link_flow<C: TestContext>() {
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::EmailConfirm,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::EmailConfirm,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -128,12 +160,12 @@ pub async fn password_reset_updates_password_and_revokes_sessions<C: TestContext
     let token_hash = token_hash_sha256(&token);
     let expires_at = Utc::now() + ChronoDuration::hours(1);
     ctx.backend()
-        .verification_token_issue(
-            stored_user.id(),
-            &token_hash,
-            VerificationTokenType::PasswordReset,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: stored_user.id(),
+            token_hash: &token_hash,
+            token_type: VerificationTokenType::PasswordReset,
             expires_at,
-        )
+        })
         .await
         .expect("create verification token");
 
@@ -569,7 +601,12 @@ async fn verification_token_seed<C: TestContext>(
     let token = token_generate();
     let token_hash = token_hash_sha256(&token);
     ctx.backend()
-        .verification_token_issue(user_id, &token_hash, token_type, expires_at)
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id,
+            token_hash: &token_hash,
+            token_type,
+            expires_at,
+        })
         .await
         .expect("create verification token");
     token

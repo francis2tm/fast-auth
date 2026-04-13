@@ -5,11 +5,13 @@ use reqwest::{StatusCode, header};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::AuthCookieResponse;
+use crate::AuthResponse;
 use crate::AuthUser;
+use crate::OrganizationKind;
+use crate::OrganizationRole;
 use crate::handlers::SIGN_UP_PATH;
 
-use super::TestContext;
+use super::{TestContext, TestUser, auth_response_assert};
 use crate::AuthBackend;
 
 /// Verifies that sign-up persists a new user and emits auth cookies.
@@ -51,8 +53,7 @@ pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
 
     // Verify response body contains user email
     let body = response.bytes().await.unwrap();
-    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.user.email, email);
+    let parsed: AuthResponse = serde_json::from_slice(&body).unwrap();
 
     // Verify user was persisted
     let stored_user = ctx
@@ -61,7 +62,48 @@ pub async fn sign_up_creates_user_and_sets_cookies<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user persisted");
+    auth_response_assert(
+        &parsed,
+        &email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
+    assert_eq!(parsed.user.id, stored_user.id().to_string());
     assert_eq!(stored_user.email(), email);
+}
+
+/// Sign-up should provision one personal workspace.
+pub async fn sign_up_provisions_personal_workspace_kind<C: TestContext>() {
+    let (base_url, client, ctx) = C::spawn().await;
+    let auth_config = ctx.auth_config();
+
+    let user = TestUser::new(&base_url, &client, auth_config).await;
+    let me = super::me_get(&base_url, &client, &user, auth_config).await;
+    auth_response_assert(
+        &me,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
+
+    let organizations = client
+        .get(format!(
+            "{}{}",
+            base_url,
+            crate::handlers::ORGANIZATIONS_PATH
+        ))
+        .header(header::COOKIE, user.cookie_header(auth_config))
+        .send()
+        .await
+        .expect("organizations list request");
+    assert_eq!(organizations.status(), StatusCode::OK);
+    let organizations: Vec<crate::OrganizationMember> =
+        organizations.json().await.expect("organizations json");
+    assert_eq!(organizations.len(), 1);
+    assert_eq!(
+        organizations[0].organization.kind,
+        OrganizationKind::Personal
+    );
 }
 
 /// Ensures duplicate sign-ups return 409 Conflict.
@@ -186,8 +228,7 @@ pub async fn sign_up_allows_single_quote_email_as_literal<C: TestContext>() {
     }));
 
     let body = response.bytes().await.unwrap();
-    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.user.email, email);
+    let parsed: AuthResponse = serde_json::from_slice(&body).unwrap();
 
     let stored_user = ctx
         .backend()
@@ -195,6 +236,13 @@ pub async fn sign_up_allows_single_quote_email_as_literal<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user persisted");
+    auth_response_assert(
+        &parsed,
+        &email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
+    assert_eq!(parsed.user.id, stored_user.id().to_string());
     assert_eq!(stored_user.email(), email);
 }
 

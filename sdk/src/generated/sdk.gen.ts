@@ -21,6 +21,23 @@ import type {
   MeGetData,
   MeGetErrors,
   MeGetResponses,
+  OrganizationInviteAcceptData,
+  OrganizationInviteAcceptErrors,
+  OrganizationInviteAcceptResponses,
+  OrganizationInviteCreateData,
+  OrganizationInviteRevokeData,
+  OrganizationInvitesListData,
+  OrganizationMemberDeleteData,
+  OrganizationMembersListData,
+  OrganizationMemberUpdateData,
+  OrganizationsCreateData,
+  OrganizationsDeleteData,
+  OrganizationsGetData,
+  OrganizationsListData,
+  OrganizationsSwitchData,
+  OrganizationsSwitchErrors,
+  OrganizationsSwitchResponses,
+  OrganizationsUpdateData,
   PasswordForgotData,
   PasswordForgotErrors,
   PasswordForgotResponses,
@@ -62,9 +79,9 @@ export type Options<
  * List API keys owned by the current user.
  */
 export const apiKeysList = <ThrowOnError extends boolean = false>(
-  options?: Options<ApiKeysListData, ThrowOnError>,
+  options: Options<ApiKeysListData, ThrowOnError>,
 ) => {
-  return (options?.client ?? client).get<
+  return (options.client ?? client).get<
     ApiKeysListResponses,
     ApiKeysListErrors,
     ThrowOnError
@@ -86,7 +103,7 @@ export const apiKeysList = <ThrowOnError extends boolean = false>(
 };
 
 /**
- * Create one API key for the current user.
+ * Create one API key for the current organization.
  */
 export const apiKeyCreate = <ThrowOnError extends boolean = false>(
   options: Options<ApiKeyCreateData, ThrowOnError>,
@@ -186,7 +203,7 @@ export const emailConfirmSend = <ThrowOnError extends boolean = false>(
  * Get current authenticated user.
  *
  * Returns the current user's information from the JWT token.
- * Queries the database to get fresh user data including email_confirmed_at and created_at.
+ * Queries the database to get fresh user data including email confirmation state.
  *
  * # Requires
  * - Valid JWT access token (httpOnly cookie)
@@ -214,6 +231,298 @@ export const meGet = <ThrowOnError extends boolean = false>(
     ],
     url: "/auth/me",
     ...options,
+  });
+};
+
+export const organizationsList = <ThrowOnError extends boolean = false>(
+  options?: Options<OrganizationsListData, ThrowOnError>,
+) => {
+  return (options?.client ?? client).get<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations",
+    ...options,
+  });
+};
+
+export const organizationsCreate = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationsCreateData, ThrowOnError>,
+) => {
+  return (options.client ?? client).post<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+export const organizationsSwitch = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationsSwitchData, ThrowOnError>,
+) => {
+  return (options.client ?? client).post<
+    OrganizationsSwitchResponses,
+    OrganizationsSwitchErrors,
+    ThrowOnError
+  >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/current",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+export const organizationInviteAccept = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationInviteAcceptData, ThrowOnError>,
+) => {
+  return (options.client ?? client).post<
+    OrganizationInviteAcceptResponses,
+    OrganizationInviteAcceptErrors,
+    ThrowOnError
+  >({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/invites/accept",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+export const organizationsDelete = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationsDeleteData, ThrowOnError>,
+) => {
+  return (options.client ?? client).delete<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}",
+    ...options,
+  });
+};
+
+export const organizationsGet = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationsGetData, ThrowOnError>,
+) => {
+  return (options.client ?? client).get<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}",
+    ...options,
+  });
+};
+
+export const organizationsUpdate = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationsUpdateData, ThrowOnError>,
+) => {
+  return (options.client ?? client).patch<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+export const organizationInvitesList = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationInvitesListData, ThrowOnError>,
+) => {
+  return (options.client ?? client).get<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/invites",
+    ...options,
+  });
+};
+
+export const organizationInviteCreate = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationInviteCreateData, ThrowOnError>,
+) => {
+  return (options.client ?? client).post<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/invites",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+};
+
+export const organizationInviteRevoke = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationInviteRevokeData, ThrowOnError>,
+) => {
+  return (options.client ?? client).delete<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/invites/{invite_id}",
+    ...options,
+  });
+};
+
+export const organizationMembersList = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationMembersListData, ThrowOnError>,
+) => {
+  return (options.client ?? client).get<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/members",
+    ...options,
+  });
+};
+
+export const organizationMemberDelete = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationMemberDeleteData, ThrowOnError>,
+) => {
+  return (options.client ?? client).delete<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/members/{member_user_id}",
+    ...options,
+  });
+};
+
+export const organizationMemberUpdate = <ThrowOnError extends boolean = false>(
+  options: Options<OrganizationMemberUpdateData, ThrowOnError>,
+) => {
+  return (options.client ?? client).patch<unknown, unknown, ThrowOnError>({
+    security: [
+      {
+        in: "cookie",
+        name: "access_token",
+        type: "apiKey",
+      },
+      {
+        name: "Authorization",
+        type: "apiKey",
+      },
+    ],
+    url: "/auth/organizations/{organization_id}/members/{member_user_id}",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 };
 

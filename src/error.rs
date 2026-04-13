@@ -51,6 +51,15 @@ pub enum AuthError {
     #[error("API key not found")]
     ApiKeyNotFound,
 
+    #[error("Organization not found")]
+    OrganizationNotFound,
+
+    #[error("Organization invite not found")]
+    OrganizationInviteNotFound,
+
+    #[error("Forbidden")]
+    Forbidden,
+
     #[error("{0}")]
     InvalidListPage(String),
 
@@ -88,6 +97,9 @@ impl IntoResponse for AuthError {
             AuthError::WeakPassword(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::RefreshTokenInvalid => (StatusCode::UNAUTHORIZED, self.to_string()),
             AuthError::ApiKeyNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AuthError::OrganizationNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AuthError::OrganizationInviteNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AuthError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AuthError::InvalidListPage(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AuthError::PasswordHash(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,

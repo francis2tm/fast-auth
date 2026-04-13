@@ -23,6 +23,10 @@ export type ApiKeyCreateResponse = {
    */
   created_at: string;
   /**
+   * User id that created the key.
+   */
+  created_by_user_id: string;
+  /**
    * API key identifier.
    */
   id: string;
@@ -42,7 +46,16 @@ export type ApiKeyCreateResponse = {
    * User-defined display name.
    */
   name: string;
+  /**
+   * Owning organization id.
+   */
+  organization_id: string;
 };
+
+/**
+ * Sortable columns for API-key listing.
+ */
+export type ApiKeyListSortBy = "created_at" | "name" | "last_used_at";
 
 /**
  * API key summary returned by list and delete endpoints.
@@ -52,6 +65,10 @@ export type ApiKeySummary = {
    * Creation timestamp.
    */
   created_at: string;
+  /**
+   * User id that created the key.
+   */
+  created_by_user_id: string;
   /**
    * API key identifier.
    */
@@ -68,18 +85,10 @@ export type ApiKeySummary = {
    * User-defined display name.
    */
   name: string;
-};
-
-/**
- * Sortable columns for API-key listing.
- */
-export type AuthApiKeyListSortBy = "created_at" | "name" | "last_used_at";
-
-/**
- * Auth response body. Tokens are set as httpOnly cookies.
- */
-export type AuthCookieResponse = {
-  user: UserResponse;
+  /**
+   * Owning organization id.
+   */
+  organization_id: string;
 };
 
 /**
@@ -90,6 +99,15 @@ export type AuthErrorResponse = {
    * Human-readable error message.
    */
   error: string;
+};
+
+/**
+ * Auth response body. Tokens are set as httpOnly cookies.
+ */
+export type AuthResponse = {
+  auth_role: string;
+  organization: OrganizationResponse;
+  user: UserResponse;
 };
 
 /**
@@ -145,6 +163,10 @@ export type ListPageResultApiKeySummary = {
      */
     created_at: string;
     /**
+     * User id that created the key.
+     */
+    created_by_user_id: string;
+    /**
      * API key identifier.
      */
     id: string;
@@ -160,6 +182,10 @@ export type ListPageResultApiKeySummary = {
      * User-defined display name.
      */
     name: string;
+    /**
+     * Owning organization id.
+     */
+    organization_id: string;
   }>;
   /**
    * Applied page size.
@@ -179,6 +205,216 @@ export type ListPageResultApiKeySummary = {
  * Shared sort direction for list endpoints.
  */
 export type ListSortOrder = "asc" | "desc";
+
+/**
+ * Organization summary exposed by auth.
+ *
+ * This is the storage-agnostic organization shape returned by backend methods
+ * and exposed by organization endpoints.
+ */
+export type Organization = {
+  /**
+   * Organization creation timestamp.
+   */
+  created_at: string;
+  /**
+   * Stable organization identifier.
+   */
+  id: string;
+  /**
+   * Whether this organization is private or collaborative.
+   */
+  kind: OrganizationKind;
+  /**
+   * Human-readable organization name.
+   */
+  name: string;
+  /**
+   * Most recent organization update timestamp.
+   */
+  updated_at: string;
+};
+
+/**
+ * Organization create request.
+ */
+export type OrganizationCreateRequest = {
+  /**
+   * Organization name.
+   */
+  name: string;
+};
+
+/**
+ * Organization invitation metadata.
+ *
+ * This is the persisted invitation state returned by list, revoke, and accept
+ * flows. The plaintext invite token is intentionally excluded here and is only
+ * available through [`OrganizationInviteWithSecret`] at creation time.
+ */
+export type OrganizationInvite = {
+  /**
+   * Acceptance timestamp, when the invite has been accepted.
+   */
+  accepted_at?: string | null;
+  /**
+   * Invitation creation timestamp.
+   */
+  created_at: string;
+  /**
+   * Email address the invitation targets.
+   */
+  email: string;
+  /**
+   * Stable invitation identifier.
+   */
+  id: string;
+  /**
+   * User identifier of the inviter.
+   */
+  invited_by_user_id: string;
+  /**
+   * Target organization identifier.
+   */
+  organization_id: string;
+  /**
+   * Human-readable target organization name.
+   */
+  organization_name: string;
+  /**
+   * Revocation timestamp, when the invite has been revoked.
+   */
+  revoked_at?: string | null;
+  /**
+   * Role that will be granted if the invite is accepted.
+   */
+  role: OrganizationRole;
+};
+
+/**
+ * Invitation accept request.
+ */
+export type OrganizationInviteAcceptRequest = {
+  /**
+   * Plaintext invitation token.
+   */
+  token: string;
+};
+
+/**
+ * Invitation create request.
+ */
+export type OrganizationInviteCreateRequest = {
+  /**
+   * Invited email.
+   */
+  email: string;
+  /**
+   * Invited role.
+   */
+  role: OrganizationRole;
+};
+
+/**
+ * Invitation creation result that includes the one-time plaintext token.
+ *
+ * The plaintext `token` is returned only once so callers can deliver it to
+ * the invited user. Later reads should use [`OrganizationInvite`] instead.
+ */
+export type OrganizationInviteWithSecret = OrganizationInvite & {
+  /**
+   * Plaintext invitation token returned once at creation time.
+   */
+  token: string;
+};
+
+/**
+ * Organization kind exposed by auth.
+ *
+ * This distinguishes private workspaces from collaborative organizations
+ * while preserving mandatory organization scoping across the application.
+ */
+export type OrganizationKind = "personal" | "shared";
+
+/**
+ * Organization membership summary exposed by auth.
+ *
+ * Backends return this when listing memberships or members so handlers can
+ * expose both the organization metadata and the caller-visible membership role
+ * in one payload.
+ */
+export type OrganizationMember = {
+  /**
+   * Membership creation timestamp.
+   */
+  created_at: string;
+  /**
+   * Member email address.
+   */
+  email: string;
+  /**
+   * Organization visible through this membership.
+   */
+  organization: Organization;
+  /**
+   * Role granted inside the organization.
+   */
+  role: OrganizationRole;
+  /**
+   * Member user identifier.
+   */
+  user_id: string;
+};
+
+/**
+ * Active organization returned in auth responses.
+ */
+export type OrganizationResponse = {
+  id: string;
+  kind: OrganizationKind;
+  name: string;
+  role: OrganizationRole;
+};
+
+/**
+ * Organization membership role exposed by auth.
+ *
+ * This role is embedded in [`RequestUser`] and [`HydratedUser`],
+ * organization membership responses,
+ * and invitations so backends and HTTP handlers can share one stable
+ * authorization vocabulary.
+ */
+export type OrganizationRole = "owner" | "admin" | "member";
+
+/**
+ * Membership role update request.
+ */
+export type OrganizationRoleUpdateRequest = {
+  /**
+   * New organization role.
+   */
+  role: OrganizationRole;
+};
+
+/**
+ * Active organization switch request.
+ */
+export type OrganizationSwitchRequest = {
+  /**
+   * Next active organization id.
+   */
+  organization_id: string;
+};
+
+/**
+ * Organization update request.
+ */
+export type OrganizationUpdateRequest = {
+  /**
+   * Updated organization name.
+   */
+  name: string;
+};
 
 /**
  * Request body for forgot password.
@@ -270,7 +506,6 @@ export type SignUpRequest = {
  * User data returned in auth responses.
  */
 export type UserResponse = {
-  created_at: string;
   email: string;
   email_confirmed_at?: string | null;
   id: string;
@@ -279,23 +514,23 @@ export type UserResponse = {
 export type ApiKeysListData = {
   body?: never;
   path?: never;
-  query?: {
+  query: {
     /**
      * Maximum number of items to return.
      */
-    limit?: number;
+    limit: number;
     /**
      * Number of items to skip from the result set.
      */
-    offset?: number;
+    offset: number;
     /**
      * Column used for sorting.
      */
-    sort_by?: AuthApiKeyListSortBy;
+    sort_by: ApiKeyListSortBy;
     /**
      * Sort direction.
      */
-    sort_order?: ListSortOrder;
+    sort_order: ListSortOrder;
   };
   url: "/auth/api-keys";
 };
@@ -429,10 +664,155 @@ export type MeGetErrors = {
 export type MeGetError = MeGetErrors[keyof MeGetErrors];
 
 export type MeGetResponses = {
-  200: UserResponse;
+  200: AuthResponse;
 };
 
 export type MeGetResponse = MeGetResponses[keyof MeGetResponses];
+
+export type OrganizationsListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/auth/organizations";
+};
+
+export type OrganizationsCreateData = {
+  body: OrganizationCreateRequest;
+  path?: never;
+  query?: never;
+  url: "/auth/organizations";
+};
+
+export type OrganizationsSwitchData = {
+  body: OrganizationSwitchRequest;
+  path?: never;
+  query?: never;
+  url: "/auth/organizations/current";
+};
+
+export type OrganizationsSwitchErrors = {
+  401: AuthErrorResponse;
+  404: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type OrganizationsSwitchError =
+  OrganizationsSwitchErrors[keyof OrganizationsSwitchErrors];
+
+export type OrganizationsSwitchResponses = {
+  200: AuthResponse;
+};
+
+export type OrganizationsSwitchResponse =
+  OrganizationsSwitchResponses[keyof OrganizationsSwitchResponses];
+
+export type OrganizationInviteAcceptData = {
+  body: OrganizationInviteAcceptRequest;
+  path?: never;
+  query?: never;
+  url: "/auth/organizations/invites/accept";
+};
+
+export type OrganizationInviteAcceptErrors = {
+  400: AuthErrorResponse;
+  401: AuthErrorResponse;
+  404: AuthErrorResponse;
+  500: AuthErrorResponse;
+};
+
+export type OrganizationInviteAcceptError =
+  OrganizationInviteAcceptErrors[keyof OrganizationInviteAcceptErrors];
+
+export type OrganizationInviteAcceptResponses = {
+  200: AuthResponse;
+};
+
+export type OrganizationInviteAcceptResponse =
+  OrganizationInviteAcceptResponses[keyof OrganizationInviteAcceptResponses];
+
+export type OrganizationsDeleteData = {
+  body?: never;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}";
+};
+
+export type OrganizationsGetData = {
+  body?: never;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}";
+};
+
+export type OrganizationsUpdateData = {
+  body: OrganizationUpdateRequest;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}";
+};
+
+export type OrganizationInvitesListData = {
+  body?: never;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/invites";
+};
+
+export type OrganizationInviteCreateData = {
+  body: OrganizationInviteCreateRequest;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/invites";
+};
+
+export type OrganizationInviteRevokeData = {
+  body?: never;
+  path: {
+    organization_id: string;
+    invite_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/invites/{invite_id}";
+};
+
+export type OrganizationMembersListData = {
+  body?: never;
+  path: {
+    organization_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/members";
+};
+
+export type OrganizationMemberDeleteData = {
+  body?: never;
+  path: {
+    organization_id: string;
+    member_user_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/members/{member_user_id}";
+};
+
+export type OrganizationMemberUpdateData = {
+  body: OrganizationRoleUpdateRequest;
+  path: {
+    organization_id: string;
+    member_user_id: string;
+  };
+  query?: never;
+  url: "/auth/organizations/{organization_id}/members/{member_user_id}";
+};
 
 export type PasswordForgotData = {
   body: PasswordForgotRequest;
@@ -494,7 +874,7 @@ export type RefreshErrors = {
 export type RefreshError = RefreshErrors[keyof RefreshErrors];
 
 export type RefreshResponses = {
-  200: AuthCookieResponse;
+  200: AuthResponse;
 };
 
 export type RefreshResponse = RefreshResponses[keyof RefreshResponses];
@@ -516,7 +896,7 @@ export type SignInErrors = {
 export type SignInError = SignInErrors[keyof SignInErrors];
 
 export type SignInResponses = {
-  200: AuthCookieResponse;
+  200: AuthResponse;
 };
 
 export type SignInResponse = SignInResponses[keyof SignInResponses];
@@ -557,7 +937,7 @@ export type SignUpErrors = {
 export type SignUpError = SignUpErrors[keyof SignUpErrors];
 
 export type SignUpResponses = {
-  200: AuthCookieResponse;
+  200: AuthResponse;
 };
 
 export type SignUpResponse = SignUpResponses[keyof SignUpResponses];

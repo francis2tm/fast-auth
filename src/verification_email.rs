@@ -1,7 +1,7 @@
 //! Verification email flows built on top of verification token primitives.
 
 use crate::{
-    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender,
+    Auth, AuthBackend, AuthHooks, AuthUser, EmailSender, VerificationTokenIssueParams,
     error::AuthError,
     handlers::email::EMAIL_CONFIRM_PATH,
     tokens::{token_expiry_calculate, token_with_hash_generate},
@@ -12,11 +12,7 @@ use crate::{
 ///
 /// Token persistence errors are returned to the caller.
 /// Email delivery errors are logged and swallowed to avoid leaking account existence.
-pub(crate) async fn email_confirm_send_for_user<
-    B: AuthBackend,
-    H: AuthHooks<B::User>,
-    E: EmailSender,
->(
+pub(crate) async fn email_confirm_send_for_user<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     auth: &Auth<B, H, E>,
     user: &B::User,
 ) -> Result<(), AuthError> {
@@ -33,12 +29,12 @@ pub(crate) async fn email_confirm_send_for_user<
 
     // Store token
     auth.backend()
-        .verification_token_issue(
-            user.id(),
-            &hash,
-            VerificationTokenType::EmailConfirm,
+        .verification_token_issue(VerificationTokenIssueParams {
+            user_id: user.id(),
+            token_hash: &hash,
+            token_type: VerificationTokenType::EmailConfirm,
             expires_at,
-        )
+        })
         .await
         .map_err(AuthError::from_backend)?;
 

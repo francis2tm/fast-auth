@@ -26,8 +26,7 @@ pub const SIGN_OUT_PATH: &str = "/auth/sign-out";
 pub(crate) struct SignOutApi;
 
 /// Returns routes for the /auth/sign-out endpoint.
-pub fn sign_out_routes<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>()
--> Router<Auth<B, H, E>> {
+pub fn sign_out_routes<B: AuthBackend, H: AuthHooks, E: EmailSender>() -> Router<Auth<B, H, E>> {
     Router::new().route(SIGN_OUT_PATH, post(sign_out::<B, H, E>))
 }
 
@@ -57,7 +56,7 @@ pub struct SignOutResponse {
         (status = INTERNAL_SERVER_ERROR, body = crate::error::AuthErrorResponse)
     )
 )]
-pub async fn sign_out<B: AuthBackend, H: AuthHooks<B::User>, E: EmailSender>(
+pub async fn sign_out<B: AuthBackend, H: AuthHooks, E: EmailSender>(
     State(auth): State<Auth<B, H, E>>,
     jar: CookieJar,
 ) -> Result<Response, AuthError> {

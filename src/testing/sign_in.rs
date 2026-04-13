@@ -5,15 +5,18 @@ use reqwest::{StatusCode, header};
 use serde_json::json;
 
 use crate::AuthBackendError;
-use crate::AuthCookieResponse;
 use crate::AuthError;
+use crate::AuthResponse;
 use crate::AuthUser;
+use crate::OrganizationKind;
+use crate::OrganizationRole;
+use crate::SessionIssueIfPasswordHashParams;
 use crate::handlers::SIGN_IN_PATH;
 use crate::password::password_hash;
 use crate::tokens::{token_expiry_calculate, token_hash_sha256, token_with_hash_generate};
 use chrono::Utc;
 
-use super::{TestContext, TestUser};
+use super::{TestContext, TestUser, auth_response_assert};
 use crate::AuthBackend;
 
 /// Successful sign-in should set cookies and update `last_sign_in_at`.
@@ -52,8 +55,7 @@ pub async fn sign_in_returns_tokens_for_valid_credentials<C: TestContext>() {
     }));
 
     let body = response.bytes().await.unwrap();
-    let parsed: AuthCookieResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.user.email, user.email);
+    let parsed: AuthResponse = serde_json::from_slice(&body).unwrap();
 
     let stored = ctx
         .backend()
@@ -61,6 +63,13 @@ pub async fn sign_in_returns_tokens_for_valid_credentials<C: TestContext>() {
         .await
         .expect("db query")
         .expect("user present after sign-in");
+    auth_response_assert(
+        &parsed,
+        &user.email,
+        OrganizationRole::Owner,
+        OrganizationKind::Personal,
+    );
+    assert_eq!(parsed.user.id, stored.id().to_string());
     assert!(
         stored.last_sign_in_at().is_some(),
         "handler should set last_sign_in_at"
@@ -242,12 +251,12 @@ pub async fn session_issue_rejects_stale_password_hash<C: TestContext>() {
 
     let error = ctx
         .backend()
-        .session_issue_if_password_hash(
-            stored_user.id(),
-            &stale_password_hash,
-            &next_refresh_hash,
-            next_expires_at,
-        )
+        .session_issue_if_password_hash(SessionIssueIfPasswordHashParams {
+            user_id: stored_user.id(),
+            current_password_hash: &stale_password_hash,
+            refresh_token_hash: &next_refresh_hash,
+            expires_at: next_expires_at,
+        })
         .await
         .expect_err("stale password hash must fail");
 
