@@ -5,6 +5,20 @@ export type ClientOptions = {
 };
 
 /**
+ * Standard API error payload returned by HTTP endpoints.
+ */
+export type ApiErrorResponse = {
+  /**
+   * Stable machine-readable error code.
+   */
+  code: string;
+  /**
+   * Human-readable public error message.
+   */
+  message: string;
+};
+
+/**
  * Request body for API key creation.
  */
 export type ApiKeyCreateRequest = {
@@ -89,16 +103,6 @@ export type ApiKeySummary = {
    * Owning organization id.
    */
   organization_id: string;
-};
-
-/**
- * Standard error response body returned by auth endpoints.
- */
-export type AuthErrorResponse = {
-  /**
-   * Human-readable error message.
-   */
-  error: string;
 };
 
 /**
@@ -536,9 +540,9 @@ export type ApiKeysListData = {
 };
 
 export type ApiKeysListErrors = {
-  400: AuthErrorResponse;
-  401: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  401: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type ApiKeysListError = ApiKeysListErrors[keyof ApiKeysListErrors];
@@ -558,9 +562,9 @@ export type ApiKeyCreateData = {
 };
 
 export type ApiKeyCreateErrors = {
-  400: AuthErrorResponse;
-  401: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  401: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type ApiKeyCreateError = ApiKeyCreateErrors[keyof ApiKeyCreateErrors];
@@ -585,9 +589,9 @@ export type ApiKeyDeleteData = {
 };
 
 export type ApiKeyDeleteErrors = {
-  401: AuthErrorResponse;
-  404: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  404: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type ApiKeyDeleteError = ApiKeyDeleteErrors[keyof ApiKeyDeleteErrors];
@@ -612,8 +616,8 @@ export type EmailConfirmGetData = {
 };
 
 export type EmailConfirmGetErrors = {
-  401: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type EmailConfirmGetError =
@@ -634,8 +638,8 @@ export type EmailConfirmSendData = {
 };
 
 export type EmailConfirmSendErrors = {
-  400: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type EmailConfirmSendError =
@@ -656,9 +660,9 @@ export type MeGetData = {
 };
 
 export type MeGetErrors = {
-  401: AuthErrorResponse;
-  404: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  404: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type MeGetError = MeGetErrors[keyof MeGetErrors];
@@ -691,9 +695,9 @@ export type OrganizationsSwitchData = {
 };
 
 export type OrganizationsSwitchErrors = {
-  401: AuthErrorResponse;
-  404: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  404: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type OrganizationsSwitchError =
@@ -714,10 +718,10 @@ export type OrganizationInviteAcceptData = {
 };
 
 export type OrganizationInviteAcceptErrors = {
-  400: AuthErrorResponse;
-  401: AuthErrorResponse;
-  404: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  401: ApiErrorResponse;
+  404: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type OrganizationInviteAcceptError =
@@ -822,8 +826,8 @@ export type PasswordForgotData = {
 };
 
 export type PasswordForgotErrors = {
-  400: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type PasswordForgotError =
@@ -844,9 +848,9 @@ export type PasswordResetData = {
 };
 
 export type PasswordResetErrors = {
-  400: AuthErrorResponse;
-  401: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  401: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type PasswordResetError = PasswordResetErrors[keyof PasswordResetErrors];
@@ -866,9 +870,9 @@ export type RefreshData = {
 };
 
 export type RefreshErrors = {
-  401: AuthErrorResponse;
-  403: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  403: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type RefreshError = RefreshErrors[keyof RefreshErrors];
@@ -887,10 +891,10 @@ export type SignInData = {
 };
 
 export type SignInErrors = {
-  400: AuthErrorResponse;
-  401: AuthErrorResponse;
-  403: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  401: ApiErrorResponse;
+  403: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type SignInError = SignInErrors[keyof SignInErrors];
@@ -909,8 +913,8 @@ export type SignOutData = {
 };
 
 export type SignOutErrors = {
-  401: AuthErrorResponse;
-  500: AuthErrorResponse;
+  401: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type SignOutError = SignOutErrors[keyof SignOutErrors];
@@ -929,9 +933,9 @@ export type SignUpData = {
 };
 
 export type SignUpErrors = {
-  400: AuthErrorResponse;
-  409: AuthErrorResponse;
-  500: AuthErrorResponse;
+  400: ApiErrorResponse;
+  409: ApiErrorResponse;
+  500: ApiErrorResponse;
 };
 
 export type SignUpError = SignUpErrors[keyof SignUpErrors];

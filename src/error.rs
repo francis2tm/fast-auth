@@ -1,19 +1,16 @@
+use std::borrow::Cow;
+
 use axum::{
-    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use common::http_error::{ApiErrorResponse, HttpError, response_build};
 use thiserror::Error;
-use utoipa::ToSchema;
 
 use crate::AuthBackendError;
 
-/// Standard error response body returned by auth endpoints.
-#[derive(Debug, serde::Serialize, ToSchema)]
-pub struct AuthErrorResponse {
-    /// Human-readable error message.
-    pub error: String,
-}
+/// Shared auth error response body.
+pub type AuthErrorResponse = ApiErrorResponse;
 
 /// Authentication and authorization errors.
 #[derive(Debug, Error)]
@@ -83,49 +80,109 @@ impl AuthError {
     }
 }
 
+impl HttpError for AuthError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::InvalidCredentials
+            | Self::InvalidToken
+            | Self::TokenExpired
+            | Self::RefreshTokenInvalid
+            | Self::Jwt(_) => StatusCode::UNAUTHORIZED,
+            Self::UserAlreadyExists => StatusCode::CONFLICT,
+            Self::UserNotFound
+            | Self::ApiKeyNotFound
+            | Self::OrganizationNotFound
+            | Self::OrganizationInviteNotFound => StatusCode::NOT_FOUND,
+            Self::EmailNotConfirmed | Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::InvalidEmail
+            | Self::BadRequest(_)
+            | Self::WeakPassword(_)
+            | Self::InvalidListPage(_) => StatusCode::BAD_REQUEST,
+            Self::PasswordHash(_) | Self::Internal(_) | Self::Backend(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        }
+    }
+
+    fn error_code(&self) -> &'static str {
+        match self {
+            Self::InvalidCredentials => "invalid_credentials",
+            Self::InvalidToken | Self::Jwt(_) => "invalid_token",
+            Self::TokenExpired => "token_expired",
+            Self::UserAlreadyExists => "user_already_exists",
+            Self::UserNotFound => "user_not_found",
+            Self::EmailNotConfirmed => "email_not_confirmed",
+            Self::InvalidEmail => "invalid_email",
+            Self::BadRequest(_) => "bad_request",
+            Self::WeakPassword(_) => "weak_password",
+            Self::RefreshTokenInvalid => "refresh_token_invalid",
+            Self::ApiKeyNotFound => "api_key_not_found",
+            Self::OrganizationNotFound => "organization_not_found",
+            Self::OrganizationInviteNotFound => "organization_invite_not_found",
+            Self::Forbidden => "forbidden",
+            Self::InvalidListPage(_) => "invalid_list_page",
+            Self::PasswordHash(_) | Self::Internal(_) | Self::Backend(_) => "internal_error",
+        }
+    }
+
+    fn public_message(&self) -> Cow<'static, str> {
+        match self {
+            Self::InvalidCredentials
+            | Self::InvalidToken
+            | Self::TokenExpired
+            | Self::UserAlreadyExists
+            | Self::UserNotFound
+            | Self::EmailNotConfirmed
+            | Self::InvalidEmail
+            | Self::BadRequest(_)
+            | Self::WeakPassword(_)
+            | Self::RefreshTokenInvalid
+            | Self::ApiKeyNotFound
+            | Self::OrganizationNotFound
+            | Self::OrganizationInviteNotFound
+            | Self::Forbidden
+            | Self::InvalidListPage(_) => Cow::Owned(self.to_string()),
+            Self::Jwt(_) => Cow::Borrowed("Invalid token"),
+            Self::PasswordHash(_) | Self::Internal(_) | Self::Backend(_) => {
+                Cow::Borrowed("Internal server error")
+            }
+        }
+    }
+}
+
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match self {
-            AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::UserAlreadyExists => (StatusCode::CONFLICT, self.to_string()),
-            AuthError::UserNotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            AuthError::EmailNotConfirmed => (StatusCode::FORBIDDEN, self.to_string()),
-            AuthError::InvalidEmail => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::WeakPassword(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::RefreshTokenInvalid => (StatusCode::UNAUTHORIZED, self.to_string()),
-            AuthError::ApiKeyNotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            AuthError::OrganizationNotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            AuthError::OrganizationInviteNotFound => (StatusCode::NOT_FOUND, self.to_string()),
-            AuthError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
-            AuthError::InvalidListPage(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            AuthError::PasswordHash(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            ),
-            AuthError::Jwt(_) => (StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
-            AuthError::Internal(ref msg) => {
-                tracing::error!("Internal error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            }
-            AuthError::Backend(ref msg) => {
-                tracing::error!("Backend error: {}", msg);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-            }
-        };
+        response_build(&self)
+    }
+}
 
-        let body = Json(AuthErrorResponse {
-            error: error_message,
-        });
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
 
-        (status, body).into_response()
+    async fn response_body_extract(response: Response) -> serde_json::Value {
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(bytes.as_ref()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn invalid_token_returns_public_message() {
+        let response = AuthError::InvalidToken.into_response();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = response_body_extract(response).await;
+        assert_eq!(body["code"], "invalid_token");
+        assert_eq!(body["message"], "Invalid token");
+    }
+
+    #[tokio::test]
+    async fn internal_error_is_sanitized() {
+        let response = AuthError::Internal("boom".into()).into_response();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = response_body_extract(response).await;
+        assert_eq!(body["code"], "internal_error");
+        assert_eq!(body["message"], "Internal server error");
     }
 }

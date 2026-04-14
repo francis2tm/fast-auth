@@ -57,19 +57,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -96,19 +96,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -138,19 +138,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -179,13 +179,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/email/confirm/send:
     post:
       tags:
@@ -213,13 +213,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/me:
     get:
       tags:
@@ -246,19 +246,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -308,19 +308,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -347,25 +347,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '404':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
       security:
       - sessionCookie: []
       - bearerApiKey: []
@@ -572,13 +572,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/password/reset:
     post:
       tags:
@@ -603,19 +603,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/refresh:
     post:
       tags:
@@ -637,19 +637,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '403':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/sign-in:
     post:
       tags:
@@ -680,25 +680,25 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '401':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '403':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/sign-out:
     post:
       tags:
@@ -724,13 +724,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
   /auth/sign-up:
     post:
       tags:
@@ -760,21 +760,34 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '409':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
         '500':
           description: ''
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthErrorResponse'
+                $ref: '#/components/schemas/ApiErrorResponse'
 components:
   schemas:
+    ApiErrorResponse:
+      type: object
+      description: Standard API error payload returned by HTTP endpoints.
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+        message:
+          type: string
+          description: Human-readable public error message.
     ApiKeyCreateRequest:
       type: object
       description: Request body for API key creation.
@@ -873,15 +886,6 @@ components:
           type: string
           format: uuid
           description: Owning organization id.
-    AuthErrorResponse:
-      type: object
-      description: Standard error response body returned by auth endpoints.
-      required:
-      - error
-      properties:
-        error:
-          type: string
-          description: Human-readable error message.
     AuthResponse:
       type: object
       description: Auth response body. Tokens are set as httpOnly cookies.
