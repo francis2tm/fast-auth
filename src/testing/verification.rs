@@ -239,7 +239,6 @@ pub async fn email_confirm_rejects_expired_token_get<C: TestContext>() {
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let payload: Value = response.json().await.expect("error payload");
-    assert_eq!(payload["code"], "invalid_token");
     assert_eq!(payload["message"], "Invalid token");
 }
 
@@ -268,7 +267,6 @@ pub async fn password_reset_rejects_expired_token<C: TestContext>() {
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     let payload: Value = response.json().await.expect("error payload");
-    assert_eq!(payload["code"], "invalid_token");
     assert_eq!(payload["message"], "Invalid token");
 
     assert_eq!(
@@ -318,7 +316,6 @@ pub async fn email_confirm_token_is_single_use<C: TestContext>() {
         .expect("second email confirm request");
     assert_eq!(second.status(), StatusCode::UNAUTHORIZED);
     let payload: Value = second.json().await.expect("error payload");
-    assert_eq!(payload["code"], "invalid_token");
     assert_eq!(payload["message"], "Invalid token");
 }
 
@@ -355,7 +352,6 @@ pub async fn password_reset_token_is_single_use<C: TestContext>() {
         .expect("second password reset request");
     assert_eq!(second.status(), StatusCode::UNAUTHORIZED);
     let payload: Value = second.json().await.expect("error payload");
-    assert_eq!(payload["code"], "invalid_token");
     assert_eq!(payload["message"], "Invalid token");
 
     assert_eq!(
@@ -498,7 +494,6 @@ pub async fn sign_in_rejects_unconfirmed_user_when_confirmation_required<C: Test
     );
 
     let payload: Value = response.json().await.expect("error payload");
-    assert_eq!(payload["code"], "email_not_confirmed");
     assert_eq!(payload["message"], "Email not confirmed");
 }
 

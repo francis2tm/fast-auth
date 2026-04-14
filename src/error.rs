@@ -104,27 +104,6 @@ impl HttpError for AuthError {
         }
     }
 
-    fn error_code(&self) -> &'static str {
-        match self {
-            Self::InvalidCredentials => "invalid_credentials",
-            Self::InvalidToken | Self::Jwt(_) => "invalid_token",
-            Self::TokenExpired => "token_expired",
-            Self::UserAlreadyExists => "user_already_exists",
-            Self::UserNotFound => "user_not_found",
-            Self::EmailNotConfirmed => "email_not_confirmed",
-            Self::InvalidEmail => "invalid_email",
-            Self::BadRequest(_) => "bad_request",
-            Self::WeakPassword(_) => "weak_password",
-            Self::RefreshTokenInvalid => "refresh_token_invalid",
-            Self::ApiKeyNotFound => "api_key_not_found",
-            Self::OrganizationNotFound => "organization_not_found",
-            Self::OrganizationInviteNotFound => "organization_invite_not_found",
-            Self::Forbidden => "forbidden",
-            Self::InvalidListPage(_) => "invalid_list_page",
-            Self::PasswordHash(_) | Self::Internal(_) | Self::Backend(_) => "internal_error",
-        }
-    }
-
     fn public_message(&self) -> Cow<'static, str> {
         match self {
             Self::InvalidCredentials
@@ -172,7 +151,6 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let body = response_body_extract(response).await;
-        assert_eq!(body["code"], "invalid_token");
         assert_eq!(body["message"], "Invalid token");
     }
 
@@ -182,7 +160,6 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body_extract(response).await;
-        assert_eq!(body["code"], "internal_error");
         assert_eq!(body["message"], "Internal server error");
     }
 }

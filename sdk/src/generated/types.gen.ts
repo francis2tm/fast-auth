@@ -9,10 +9,6 @@ export type ClientOptions = {
  */
 export type ApiErrorResponse = {
   /**
-   * Stable machine-readable error code.
-   */
-  code: string;
-  /**
    * Human-readable public error message.
    */
   message: string;

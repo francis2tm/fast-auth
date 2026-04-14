@@ -779,12 +779,8 @@ components:
       type: object
       description: Standard API error payload returned by HTTP endpoints.
       required:
-      - code
       - message
       properties:
-        code:
-          type: string
-          description: Stable machine-readable error code.
         message:
           type: string
           description: Human-readable public error message.
