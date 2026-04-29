@@ -1,3 +1,4 @@
+use common::env_var;
 use serde::{Deserialize, de::DeserializeOwned};
 use std::{path::Path, time::Duration};
 use thiserror::Error;
@@ -5,10 +6,6 @@ use thiserror::Error;
 /// Errors when loading or validating authentication configuration.
 #[derive(Debug, Error)]
 pub enum AuthConfigError {
-    /// Required environment variable was not provided.
-    #[error("missing env var {0}")]
-    MissingEnv(&'static str),
-
     /// Failed to read TOML config file.
     #[error("failed to read auth config file '{path}': {source}")]
     ConfigFileRead {
@@ -226,9 +223,13 @@ impl AuthConfig {
     /// Only `AUTH_JWT_SECRET` remains environment-driven.
     /// All other values are loaded from `path` root sections.
     ///
+    /// # Panics
+    ///
+    /// Panics when `AUTH_JWT_SECRET` is not set.
+    ///
     pub fn from_toml<P: AsRef<Path>>(path: P) -> Result<Self, AuthConfigError> {
         let file: AuthConfigFile = config_toml_parse(path)?;
-        let jwt_secret = env_var_required("AUTH_JWT_SECRET")?;
+        let jwt_secret = env_var("AUTH_JWT_SECRET");
         let cfg = file.auth_config_build(jwt_secret);
 
         cfg.validate()?;
@@ -278,10 +279,6 @@ impl AuthConfig {
 
         Ok(())
     }
-}
-
-fn env_var_required(key: &'static str) -> Result<String, AuthConfigError> {
-    std::env::var(key).map_err(|_| AuthConfigError::MissingEnv(key))
 }
 
 fn optional_string(value: String) -> Option<String> {
@@ -347,68 +344,6 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(cfg.validate(), Err(AuthConfigError::Invalid(_))));
-    }
-
-    #[test]
-    #[serial]
-    fn from_toml_requires_jwt_secret_env_var() {
-        let path = std::env::temp_dir().join(format!(
-            "fast-auth-config-{}-missing-secret.toml",
-            std::process::id()
-        ));
-        std::fs::write(
-            &path,
-            r#"[token]
-access_expiry_secs = 900
-refresh_expiry_secs = 604800
-
-[jwt]
-issuer = "fast-auth"
-audience = "authenticated"
-
-[password]
-min_length = 8
-max_length = 128
-require_letter = true
-require_number = true
-
-[cookie]
-access_token_name = "access_token"
-refresh_token_name = "refresh_token"
-domain = ""
-path = "/"
-secure = false
-same_site = "lax"
-
-[verification]
-email_confirmation_require = false
-email_token_expiry_secs = 3600
-password_reset_token_expiry_secs = 3600
-
-[frontend]
-base_url = ""
-"#,
-        )
-        .unwrap();
-
-        let previous = std::env::var("AUTH_JWT_SECRET").ok();
-        unsafe {
-            std::env::remove_var("AUTH_JWT_SECRET");
-        }
-
-        let result = AuthConfig::from_toml(&path);
-        let _ = std::fs::remove_file(&path);
-
-        if let Some(value) = previous {
-            unsafe {
-                std::env::set_var("AUTH_JWT_SECRET", value);
-            }
-        }
-
-        assert!(matches!(
-            result,
-            Err(AuthConfigError::MissingEnv("AUTH_JWT_SECRET"))
-        ));
     }
 
     #[test]
