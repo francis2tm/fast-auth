@@ -540,35 +540,30 @@ pub async fn organization_invite_accept_rejects_reuse<C: TestContext>() {
     assert_eq!(replay.status(), StatusCode::NOT_FOUND);
 }
 
-/// Invite acceptance must still reject one personal-workspace invite row if it exists.
-pub async fn organization_invite_accept_rejects_personal_workspace_even_if_invite_exists<
-    C: TestContext,
->() {
+/// Personal workspaces must reject invite inserts at the storage layer.
+pub async fn organization_invite_insert_rejects_personal_workspace<C: TestContext>() {
     let (base_url, client, ctx) = C::spawn().await;
     let auth_config = ctx.auth_config();
     let owner = TestUser::new(&base_url, &client, auth_config).await;
-    let invitee = TestUser::new(&base_url, &client, auth_config).await;
     let owner_me = me_get(&base_url, &client, &owner, auth_config).await;
     let personal_organization_id =
         Uuid::parse_str(&owner_me.organization.id).expect("personal organization id");
     let owner_user_id = Uuid::parse_str(&owner_me.user.id).expect("owner user id");
-    let (token, token_hash) = token_with_hash_generate();
+    let (_, token_hash) = token_with_hash_generate();
+    let invitee_email = format!("invitee+{}@example.com", Uuid::new_v4());
 
-    ctx.organization_invite_insert(
-        personal_organization_id,
-        owner_user_id,
-        &invitee.email,
-        OrganizationRole::Member,
-        &token_hash,
-    )
-    .await;
-
-    let response = client
-        .post(format!("{base_url}{}", organization_invite_accept_path()))
-        .header(header::COOKIE, invitee.cookie_header(auth_config))
-        .json(&json!({ "token": token }))
-        .send()
+    let err = ctx
+        .organization_invite_insert(
+            personal_organization_id,
+            owner_user_id,
+            &invitee_email,
+            OrganizationRole::Member,
+            &token_hash,
+        )
         .await
-        .expect("personal invite accept request");
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        .expect_err("personal workspace invite insert should fail");
+    assert!(
+        err.contains("must not have invites"),
+        "unexpected personal workspace invite error: {err}"
+    );
 }

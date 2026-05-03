@@ -304,6 +304,8 @@ pub trait TestContext: Sized + Send + Sync {
     ) -> impl Future<Output = bool> + Send;
 
     /// Insert one organization invite directly for tests that need storage-level setup.
+    ///
+    /// Returns the storage error string when the insert is rejected by backend invariants.
     fn organization_invite_insert(
         &self,
         organization_id: Uuid,
@@ -311,7 +313,7 @@ pub trait TestContext: Sized + Send + Sync {
         email: &str,
         role: crate::OrganizationRole,
         token_hash: &str,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = Result<(), String>> + Send;
 }
 
 /// Test suite for fast-auth.
@@ -381,7 +383,7 @@ impl<C: TestContext> Suite<C> {
         organizations::organization_invite_revoke_prevents_acceptance::<C>().await;
         organizations::organization_invite_accept_rejects_wrong_email::<C>().await;
         organizations::organization_invite_accept_rejects_reuse::<C>().await;
-        organizations::organization_invite_accept_rejects_personal_workspace_even_if_invite_exists::<C>().await;
+        organizations::organization_invite_insert_rejects_personal_workspace::<C>().await;
         organizations::organization_member_role_gates_admin_routes::<C>().await;
         organizations::organization_delete_active_org_preserves_auth_or_is_rejected::<C>().await;
         organizations::organization_delete_personal_org_when_inactive_is_rejected::<C>().await;
@@ -538,7 +540,9 @@ impl<C: TestContext> Suite<C> {
 /// #         _: &str,
 /// #         _: OrganizationRole,
 /// #         _: &str,
-/// #     ) -> impl std::future::Future<Output = ()> + Send { async {} }
+/// #     ) -> impl std::future::Future<Output = Result<(), String>> + Send {
+/// #         async { Ok(()) }
+/// #     }
 /// # }
 /// #
 /// fast_auth::test_suite!(MyContext);
@@ -782,8 +786,8 @@ macro_rules! test_suite {
         }
 
         #[tokio::test]
-        async fn organization_invite_accept_rejects_personal_workspace_even_if_invite_exists() {
-            $crate::testing::organizations::organization_invite_accept_rejects_personal_workspace_even_if_invite_exists::<$context>().await;
+        async fn organization_invite_insert_rejects_personal_workspace() {
+            $crate::testing::organizations::organization_invite_insert_rejects_personal_workspace::<$context>().await;
         }
 
         #[tokio::test]

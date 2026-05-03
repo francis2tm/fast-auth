@@ -18,12 +18,12 @@ pub use self::basics::{
 pub use self::invites::{
     organization_invite_accept_adds_membership_and_switches_context,
     organization_invite_accept_and_revoke_race_has_single_winner,
-    organization_invite_accept_race_has_single_winner,
-    organization_invite_accept_rejects_personal_workspace_even_if_invite_exists,
-    organization_invite_accept_rejects_reuse, organization_invite_accept_rejects_wrong_email,
+    organization_invite_accept_race_has_single_winner, organization_invite_accept_rejects_reuse,
+    organization_invite_accept_rejects_wrong_email,
     organization_invite_accept_supports_user_created_after_invite,
     organization_invite_create_race_keeps_single_active_invite,
     organization_invite_create_replaces_existing_active_invite,
+    organization_invite_insert_rejects_personal_workspace,
     organization_invite_revoke_prevents_acceptance,
 };
 pub use self::permissions::{
