@@ -12,7 +12,7 @@ readme = "README.md"
 
 [features]
 default = []
-testing = ["dep:reqwest"]
+testing = []
 
 [dependencies]
 tracing-config = { path = "../tracing-config" }
@@ -37,7 +37,7 @@ chrono = { version = "0", features = ["serde"] }
 time = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
 email_address = "0"
-reqwest = { version = "0", features = ["json"], optional = true }
+reqwest = { workspace = true, features = ["json"] }
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 
 [dev-dependencies]
@@ -45,4 +45,3 @@ common = { path = "../common", features = ["testing"] }
 test-utils = { version = "0", path = "../test-utils" }
 serial_test = "3"
 tower = { version = "0", features = ["util"] }
-reqwest = { version = "0", features = ["json"] }

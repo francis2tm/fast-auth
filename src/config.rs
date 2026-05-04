@@ -1,5 +1,5 @@
 use common::env_var;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::Deserialize;
 use std::{path::Path, time::Duration};
 use thiserror::Error;
 
@@ -131,7 +131,6 @@ impl Default for AuthConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuthConfigFile {
-    frontend: AuthTomlFrontendConfig,
     jwt: AuthTomlJwtConfig,
     token: AuthTomlTokenConfig,
     password: AuthTomlPasswordConfig,
@@ -181,12 +180,6 @@ struct AuthTomlVerificationConfig {
     password_reset_token_expiry_secs: u64,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AuthTomlFrontendConfig {
-    base_url: String,
-}
-
 impl AuthConfigFile {
     fn auth_config_build(self, jwt_secret: String) -> AuthConfig {
         AuthConfig {
@@ -211,7 +204,7 @@ impl AuthConfigFile {
             password_reset_token_expiry: Duration::from_secs(
                 self.verification.password_reset_token_expiry_secs,
             ),
-            email_link_base_url: optional_string(self.frontend.base_url),
+            email_link_base_url: None,
             email_confirmation_require: self.verification.email_confirmation_require,
         }
     }
@@ -232,12 +225,32 @@ impl AuthConfig {
         let jwt_secret = env_var("AUTH_JWT_SECRET");
         let cfg = file.auth_config_build(jwt_secret);
 
-        cfg.validate()?;
+        cfg.validate_base()?;
         Ok(cfg)
     }
 
     /// Validate configuration
     pub fn validate(&self) -> Result<(), AuthConfigError> {
+        self.validate_base()?;
+
+        if self.email_confirmation_require
+            && self
+                .email_link_base_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .is_none()
+        {
+            return Err(invalid(
+                "email_link_base_url must be set when email_confirmation_require=true",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Validate the auth config fields that come directly from `auth.toml`.
+    fn validate_base(&self) -> Result<(), AuthConfigError> {
         if self.jwt_secret.is_empty() {
             return Err(invalid("JWT secret cannot be empty"));
         }
@@ -264,33 +277,20 @@ impl AuthConfig {
             ));
         }
 
-        if self.email_confirmation_require
-            && self
-                .email_link_base_url
-                .as_deref()
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .is_none()
-        {
-            return Err(invalid(
-                "email_link_base_url must be set when email_confirmation_require=true",
-            ));
-        }
-
         Ok(())
     }
-}
-
-fn optional_string(value: String) -> Option<String> {
-    (!value.trim().is_empty()).then_some(value)
 }
 
 fn invalid(message: &'static str) -> AuthConfigError {
     AuthConfigError::Invalid(message.to_string())
 }
 
+fn optional_string(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
+}
+
 /// Parse a TOML config file into a strict typed structure.
-pub fn config_toml_parse<P: AsRef<Path>, T: DeserializeOwned>(
+pub fn config_toml_parse<P: AsRef<Path>, T: serde::de::DeserializeOwned>(
     path: P,
 ) -> Result<T, AuthConfigError> {
     let path = path.as_ref();
@@ -379,9 +379,6 @@ same_site = "strict"
 email_confirmation_require = true
 email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-
-[frontend]
-base_url = "http://localhost:3000"
 "#,
         )
         .unwrap();
@@ -409,10 +406,7 @@ base_url = "http://localhost:3000"
         assert_eq!(cfg.access_token_expiry, Duration::from_secs(600));
         assert_eq!(cfg.cookie_same_site, CookieSameSite::Strict);
         assert!(cfg.email_confirmation_require);
-        assert_eq!(
-            cfg.email_link_base_url,
-            Some("http://localhost:3000".to_string())
-        );
+        assert_eq!(cfg.email_link_base_url, None);
     }
 
     #[test]
@@ -449,9 +443,6 @@ same_site = "lax"
 email_confirmation_require = false
 email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
-
-[frontend]
-base_url = ""
 "#,
         )
         .unwrap();
