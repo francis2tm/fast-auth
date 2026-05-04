@@ -58,7 +58,7 @@ pub use backend::{
     SessionExchangeParams, SessionIssueIfPasswordHashParams, UserCreateParams, UserCreated,
     VerificationTokenIssueParams,
 };
-pub use config::{AuthConfig, AuthConfigError, CookieSameSite, config_toml_parse};
+pub use config::{AuthConfig, AuthConfigError, CookieSameSite};
 pub use email_sender::{EmailSendError, EmailSender};
 pub use error::AuthError;
 pub use extractors::{RequestAdmin, RequestOwner, RequestUser};

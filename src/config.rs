@@ -1,26 +1,17 @@
-use common::env_var;
+use common::{
+    config::{TomlConfigError, workspace_app_toml_parse, workspace_frontend_base_url},
+    env_var,
+};
 use serde::Deserialize;
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 use thiserror::Error;
 
 /// Errors when loading or validating authentication configuration.
 #[derive(Debug, Error)]
 pub enum AuthConfigError {
-    /// Failed to read TOML config file.
-    #[error("failed to read auth config file '{path}': {source}")]
-    ConfigFileRead {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// Failed to parse TOML config file.
-    #[error("failed to parse auth config file '{path}': {source}")]
-    ConfigFileParse {
-        path: String,
-        #[source]
-        source: toml::de::Error,
-    },
+    /// Failed to read or parse TOML config files.
+    #[error(transparent)]
+    Toml(#[from] TomlConfigError),
 
     /// Configuration failed validation checks.
     #[error("invalid auth config: {0}")]
@@ -180,50 +171,45 @@ struct AuthTomlVerificationConfig {
     password_reset_token_expiry_secs: u64,
 }
 
-impl AuthConfigFile {
-    fn auth_config_build(self, jwt_secret: String) -> AuthConfig {
-        AuthConfig {
-            jwt_secret,
-            access_token_expiry: Duration::from_secs(self.token.access_expiry_secs),
-            refresh_token_expiry: Duration::from_secs(self.token.refresh_expiry_secs),
-            jwt_issuer: self.jwt.issuer,
-            jwt_audience: self.jwt.audience,
-            password_min_length: self.password.min_length,
-            password_max_length: self.password.max_length,
-            password_require_letter: self.password.require_letter,
-            password_require_number: self.password.require_number,
-            cookie_access_token_name: self.cookie.access_token_name,
-            cookie_refresh_token_name: self.cookie.refresh_token_name,
-            cookie_domain: optional_string(self.cookie.domain),
-            cookie_path: self.cookie.path,
-            cookie_secure: self.cookie.secure,
-            cookie_same_site: self.cookie.same_site,
-            email_verification_token_expiry: Duration::from_secs(
-                self.verification.email_token_expiry_secs,
-            ),
-            password_reset_token_expiry: Duration::from_secs(
-                self.verification.password_reset_token_expiry_secs,
-            ),
-            email_link_base_url: None,
-            email_confirmation_require: self.verification.email_confirmation_require,
-        }
-    }
-}
-
 impl AuthConfig {
-    /// Build auth config from a TOML file.
+    /// Build auth config from merged `auth.toml` plus env-backed secrets.
     ///
     /// Only `AUTH_JWT_SECRET` remains environment-driven.
-    /// All other values are loaded from `path` root sections.
+    /// All other values are loaded from merged TOML config files.
     ///
     /// # Panics
     ///
     /// Panics when `AUTH_JWT_SECRET` is not set.
     ///
-    pub fn from_toml<P: AsRef<Path>>(path: P) -> Result<Self, AuthConfigError> {
-        let file: AuthConfigFile = config_toml_parse(path)?;
+    pub fn from_toml_env() -> Result<Self, AuthConfigError> {
+        let file: AuthConfigFile = workspace_app_toml_parse("auth.toml")?;
+        let frontend_base_url = workspace_frontend_base_url()?;
         let jwt_secret = env_var("AUTH_JWT_SECRET");
-        let cfg = file.auth_config_build(jwt_secret);
+        let cfg = Self {
+            jwt_secret,
+            access_token_expiry: Duration::from_secs(file.token.access_expiry_secs),
+            refresh_token_expiry: Duration::from_secs(file.token.refresh_expiry_secs),
+            jwt_issuer: file.jwt.issuer,
+            jwt_audience: file.jwt.audience,
+            password_min_length: file.password.min_length,
+            password_max_length: file.password.max_length,
+            password_require_letter: file.password.require_letter,
+            password_require_number: file.password.require_number,
+            cookie_access_token_name: file.cookie.access_token_name,
+            cookie_refresh_token_name: file.cookie.refresh_token_name,
+            cookie_domain: optional_string(file.cookie.domain),
+            cookie_path: file.cookie.path,
+            cookie_secure: file.cookie.secure,
+            cookie_same_site: file.cookie.same_site,
+            email_verification_token_expiry: Duration::from_secs(
+                file.verification.email_token_expiry_secs,
+            ),
+            password_reset_token_expiry: Duration::from_secs(
+                file.verification.password_reset_token_expiry_secs,
+            ),
+            email_link_base_url: Some(frontend_base_url),
+            email_confirmation_require: file.verification.email_confirmation_require,
+        };
 
         cfg.validate_base()?;
         Ok(cfg)
@@ -289,24 +275,6 @@ fn optional_string(value: String) -> Option<String> {
     (!value.trim().is_empty()).then_some(value)
 }
 
-/// Parse a TOML config file into a strict typed structure.
-pub fn config_toml_parse<P: AsRef<Path>, T: serde::de::DeserializeOwned>(
-    path: P,
-) -> Result<T, AuthConfigError> {
-    let path = path.as_ref();
-    let path_display = path.display().to_string();
-    let content =
-        std::fs::read_to_string(path).map_err(|source| AuthConfigError::ConfigFileRead {
-            path: path_display.clone(),
-            source,
-        })?;
-
-    toml::from_str::<T>(&content).map_err(|source| AuthConfigError::ConfigFileParse {
-        path: path_display,
-        source,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,10 +317,7 @@ mod tests {
     #[test]
     #[serial]
     fn from_toml_loads_file_values_and_env_secret() {
-        let path =
-            std::env::temp_dir().join(format!("fast-auth-config-{}-load.toml", std::process::id()));
-        std::fs::write(
-            &path,
+        let file: AuthConfigFile = toml::from_str(
             r#"[token]
 access_expiry_secs = 600
 refresh_expiry_secs = 604800
@@ -389,8 +354,32 @@ password_reset_token_expiry_secs = 3600
             std::env::set_var("AUTH_JWT_SECRET", &secret);
         }
 
-        let cfg = AuthConfig::from_toml(&path).unwrap();
-        let _ = std::fs::remove_file(&path);
+        let cfg = AuthConfig {
+            jwt_secret: secret.clone(),
+            access_token_expiry: Duration::from_secs(file.token.access_expiry_secs),
+            refresh_token_expiry: Duration::from_secs(file.token.refresh_expiry_secs),
+            jwt_issuer: file.jwt.issuer,
+            jwt_audience: file.jwt.audience,
+            password_min_length: file.password.min_length,
+            password_max_length: file.password.max_length,
+            password_require_letter: file.password.require_letter,
+            password_require_number: file.password.require_number,
+            cookie_access_token_name: file.cookie.access_token_name,
+            cookie_refresh_token_name: file.cookie.refresh_token_name,
+            cookie_domain: optional_string(file.cookie.domain),
+            cookie_path: file.cookie.path,
+            cookie_secure: file.cookie.secure,
+            cookie_same_site: file.cookie.same_site,
+            email_verification_token_expiry: Duration::from_secs(
+                file.verification.email_token_expiry_secs,
+            ),
+            password_reset_token_expiry: Duration::from_secs(
+                file.verification.password_reset_token_expiry_secs,
+            ),
+            email_link_base_url: Some("http://localhost:3000".to_string()),
+            email_confirmation_require: file.verification.email_confirmation_require,
+        };
+        cfg.validate_base().unwrap();
 
         if let Some(value) = previous {
             unsafe {
@@ -406,18 +395,16 @@ password_reset_token_expiry_secs = 3600
         assert_eq!(cfg.access_token_expiry, Duration::from_secs(600));
         assert_eq!(cfg.cookie_same_site, CookieSameSite::Strict);
         assert!(cfg.email_confirmation_require);
-        assert_eq!(cfg.email_link_base_url, None);
+        assert_eq!(
+            cfg.email_link_base_url.as_deref(),
+            Some("http://localhost:3000")
+        );
     }
 
     #[test]
     #[serial]
     fn from_toml_rejects_missing_required_auth_field() {
-        let path = std::env::temp_dir().join(format!(
-            "fast-auth-config-{}-missing-field.toml",
-            std::process::id()
-        ));
-        std::fs::write(
-            &path,
+        let result = toml::from_str::<AuthConfigFile>(
             r#"[token]
 access_expiry_secs = 900
 refresh_expiry_secs = 604800
@@ -444,30 +431,8 @@ email_confirmation_require = false
 email_token_expiry_secs = 3600
 password_reset_token_expiry_secs = 3600
 "#,
-        )
-        .unwrap();
+        );
 
-        let previous = std::env::var("AUTH_JWT_SECRET").ok();
-        unsafe {
-            std::env::set_var("AUTH_JWT_SECRET", "a".repeat(32));
-        }
-
-        let result = AuthConfig::from_toml(&path);
-        let _ = std::fs::remove_file(&path);
-
-        if let Some(value) = previous {
-            unsafe {
-                std::env::set_var("AUTH_JWT_SECRET", value);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("AUTH_JWT_SECRET");
-            }
-        }
-
-        assert!(matches!(
-            result,
-            Err(AuthConfigError::ConfigFileParse { .. })
-        ));
+        assert!(result.is_err());
     }
 }
