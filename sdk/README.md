@@ -29,7 +29,7 @@ import { authConfigParseToml } from "@fast-auth/sdk";
 const config = authConfigParseToml(tomlText);
 ```
 
-## Parse fast-auth.toml from disk (server/build-time)
+## Parse config/auth.toml from disk (server/build-time)
 
 ```ts
 import { parseFastAuthToml } from "@fast-auth/sdk/server";

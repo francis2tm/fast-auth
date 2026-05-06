@@ -7,18 +7,17 @@ import {
 } from "./config";
 
 /**
- * Default path to fast-auth.toml, relative to the monorepo root.
- * Located at: frontend/packages/auth/fast-auth/fast-auth.toml
+ * Default path to config/auth.toml, relative to the monorepo root.
  */
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const FAST_AUTH_TOML_PATH = join(__dirname, "../../fast-auth.toml");
+export const FAST_AUTH_TOML_PATH = join(__dirname, "../../../../config/auth.toml");
 
 /**
- * Parse fast-auth.toml and return validated config.
+ * Parse config/auth.toml and return validated config.
  *
  * Throws a detailed error when TOML parsing or validation fails.
  *
- * @param tomlPath - Path to fast-auth.toml (defaults to FAST_AUTH_TOML_PATH)
+ * @param tomlPath - Path to config/auth.toml (defaults to FAST_AUTH_TOML_PATH)
  * @returns Strict fast-auth configuration
  */
 export function parseFastAuthToml(
@@ -32,7 +31,7 @@ export function parseFastAuthToml(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown config parse error";
-    throw new Error(`Invalid fast-auth.toml configuration:\n  - ${message}`);
+    throw new Error(`Invalid config/auth.toml configuration:\n  - ${message}`);
   }
 }
 
