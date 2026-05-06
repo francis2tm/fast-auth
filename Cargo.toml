@@ -36,7 +36,7 @@ hex = "0"
 chrono = { version = "0", features = ["serde"] }
 time = "0"
 uuid = { version = "1", features = ["v4", "serde"] }
-email_address = "0"
+email_address = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
 
