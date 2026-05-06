@@ -172,10 +172,10 @@ struct AuthTomlVerificationConfig {
 }
 
 impl AuthConfig {
-    /// Build auth config from merged `auth.toml` plus env-backed secrets.
+    /// Build auth config from `config/auth.toml` plus env-backed secrets.
     ///
     /// Only `AUTH_JWT_SECRET` remains environment-driven.
-    /// All other values are loaded from merged TOML config files.
+    /// All other values are loaded from flat TOML config files.
     ///
     /// # Panics
     ///
